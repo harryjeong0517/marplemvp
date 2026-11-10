@@ -20277,6 +20277,46 @@ renderPermissionsPage = function () {
   el.innerHTML = '<div class="table-wrap"><table class="s53-perm"><thead><tr><th>이름</th><th>권한</th><th>소속</th><th>열람 범위</th><th>볼 수 있는 매출 · 프로젝트</th></tr></thead><tbody>' + rows + '</tbody></table></div>' + (can ? '' : '<div class="org-sub" style="padding:10px 4px">대표 · 관리자만 바꿀 수 있어요.</div>');
 };
 
+// ── 베뉴 임직원 동기화: 팀을 새로 만들거나 바꾸지 않음 (조직은 설정에서만 관리) ──
+// 이미 팀이 있는 사람은 그대로, 새로 들어온 사람은 부서명과 똑같은 팀이 있을 때만 그 팀, 없으면 "팀 없음"
+empTeamFor = function (dept, cur) {
+  if (cur) return cur;
+  dept = String(dept || '').trim();
+  return dept && (DB.teams || []).some(function (t) { return t.name === dept; }) ? dept : '';
+};
+
+// ── 사용자 삭제: 저장까지 하고, 베뉴 임직원 동기화가 다시 만들지 않게 기억 ──
+// DB.empIgnore = [{ vid, email, name, at }]  (같은 사람을 사용자 관리에서 다시 추가하면 목록에서 빠짐)
+function s53Ignored(t) {
+  var em = String(t.email || '').trim().toLowerCase(), nm = String(t.name || '').trim();
+  return (DB.empIgnore || []).some(function (x) { return (x.vid && x.vid === t.id) || (em && x.email === em) || (!x.vid && !x.email && x.name === nm); });
+}
+deleteUser = function (userId) {
+  var u = s53User(userId); if (!u) return;
+  if (currentUser && userId === currentUser.id) { showToast('지금 로그인한 계정은 삭제할 수 없어요', 'error'); return; }
+  if (!confirm(u.name + '님을 삭제할까요?\n베뉴 임직원 목록에 남아 있어도 다시 추가되지 않아요. (잠시 쉬는 경우라면 삭제 대신 [수정]에서 비활성으로 바꿔 주세요)')) return;
+  var notes = [];
+  DB.empIgnore = (DB.empIgnore || []).concat([{ vid: u.venueTeamId || '', email: String(u.email || '').trim().toLowerCase(), name: u.name, at: new Date().toISOString() }]);
+  (DB.teams || []).forEach(function (t) { if (t.leadId === userId) { t.leadId = ''; notes.push(t.name + ' 팀장/실장 지정 해제'); } });
+  (DB.depts || []).forEach(function (d) { if (d.headId === userId) { d.headId = ''; notes.push(d.name + ' 본부장 지정 해제'); } });
+  DB.users = DB.users.filter(function (x) { return x.id !== userId; });
+  renderUsersPage(); s53Done(u.name + '님을 삭제했어요', notes);
+};
+empApplyTeam = (function (orig) {
+  return function (team) { var a = [].slice.call(arguments); if (Array.isArray(team) && (DB.empIgnore || []).length) a[0] = team.filter(function (t) { return !s53Ignored(t); }); return orig.apply(this, a); };
+})(empApplyTeam);
+saveUser = (function (orig) {
+  return function () {
+    var isNew = !editingUserId, r = orig.apply(this, arguments);
+    if (isNew && (DB.empIgnore || []).length) {
+      var nm = ((document.getElementById('au-name') || {}).value || '').trim(), em = ((document.getElementById('au-email') || {}).value || '').trim().toLowerCase();
+      var n0 = DB.empIgnore.length; DB.empIgnore = DB.empIgnore.filter(function (x) { return !((nm && x.name === nm) || (em && x.email === em)); });
+      if (DB.empIgnore.length !== n0) saveDB();
+    }
+    return r;
+  };
+})(saveUser);
+
 // ════════════════════════════════════════════
 //  메뉴 리뉴얼 — 9개 메뉴 + 페이지 위 탭 + 결재함 + Ctrl K
 //  (기존 메뉴·화면·권한은 그대로 두고 들어가는 길만 정리)
