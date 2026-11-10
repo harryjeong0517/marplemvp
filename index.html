@@ -1944,6 +1944,12 @@ tr.own-r{background:rgba(124,58,237,.03)}
 .s53-empty{color:var(--text3);font-size:13px;padding:14px 4px}
 .s53-hint{font-size:12px;color:var(--text3);margin-left:10px}
 @media (max-width:1100px){.s53-row{flex-wrap:wrap}.s53-act{width:100%;justify-content:flex-end}}
+.s53-scope{min-width:170px;max-width:190px}.s53-scope.on{border-color:var(--marple,#007db8);color:var(--marple,#007db8);font-weight:600}
+.s53-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.s53-chip{border:1px solid var(--border);background:var(--bg2,#fff);border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer;color:var(--text2);font-family:inherit}
+.s53-chip.on{background:#e3f4fc;border-color:#9fd3ef;color:#035a85;font-weight:600}
+.s53-chip:disabled{cursor:default;opacity:.7}
+.s53-perm td{vertical-align:middle}
 
 /* ── 메뉴 리뉴얼 ── */
 nav .nav-section.rn-old { display: none !important; }
@@ -19976,6 +19982,46 @@ renderUsersPage = function () {
 };
 
 // ════════════════════════════════════════════
+//  매출 · 프로젝트 열람 범위 (PC · 모바일 공용, 53차)
+//  기본 = 자동: 대표 · 관리자 → 회사 전체 / 본부장 → 맡은 본부 / 팀장·팀원 → 자기 팀
+//  대표 · 관리자가 사람마다 바꿀 수 있음: users[].salesScope = { mode: 'all'|'depts'|'teams'|'self', ids: [...] }
+//  · 본부 선택 = 그 본부에 속한 팀 전부 (팀이 새로 생기거나 옮겨도 따라감)
+//  · 어느 범위든 본인이 담당자인 프로젝트는 항상 보임
+// ════════════════════════════════════════════
+var SC_MODES = { auto: '자동 (직급 · 소속 기준)', all: '회사 전체', depts: '본부 선택', teams: '팀 선택', self: '본인 담당만' };
+function scTeamDept(name) { var t = (DB.teams || []).find(function (x) { return x.name === name; }); return t ? t.deptId : null; }
+function scAuto(u) {
+  if (!u) return { all: false, teams: [], label: '' };
+  if (u.role === 'admin' || u.approvalRole === 'ceo') return { all: true, teams: [], label: '회사 전체' };
+  if (u.approvalRole === 'deptHead') {
+    var d = (DB.depts || []).find(function (x) { return x.headId === u.id; }) || (DB.depts || []).find(function (x) { return x.id === (scTeamDept(u.team) || u.deptId); });
+    if (d) return { all: false, teams: (DB.teams || []).filter(function (t) { return t.deptId === d.id; }).map(function (t) { return t.name; }), label: d.name };
+  }
+  return { all: false, teams: [u.team].filter(Boolean), label: u.team || '본인 담당만' };
+}
+function scopeOf(u) {
+  if (!u) return { all: false, teams: [], label: '' };
+  if (u.approvalRole === 'ceo') return { all: true, teams: [], label: '회사 전체' };
+  var c = u.salesScope, m = c && c.mode, ids = (c && c.ids) || [];
+  if (m === 'all') return { all: true, teams: [], label: '회사 전체', custom: true };
+  if (m === 'self') return { all: false, teams: [], label: '본인 담당만', custom: true };
+  if (m === 'depts') {
+    var ds = (DB.depts || []).filter(function (d) { return ids.indexOf(d.id) >= 0; });
+    return { all: false, teams: (DB.teams || []).filter(function (t) { return ids.indexOf(t.deptId) >= 0; }).map(function (t) { return t.name; }), label: ds.map(function (d) { return d.name; }).join(', ') || '고른 본부 없음', custom: true };
+  }
+  if (m === 'teams') {
+    var ts = (DB.teams || []).filter(function (t) { return ids.indexOf(t.id) >= 0; }).map(function (t) { return t.name; });
+    return { all: false, teams: ts, label: ts.join(', ') || '고른 팀 없음', custom: true };
+  }
+  return scAuto(u);
+}
+function scopeProjects(u) {
+  var ps = (DB.projects || []).filter(Boolean); if (!u) return [];
+  var s = scopeOf(u); if (s.all) return ps;
+  return ps.filter(function (p) { return s.teams.indexOf(p.team) >= 0 || p.manager === u.name || p.manager === u.id; });
+}
+
+// ════════════════════════════════════════════
 //  53차 — 설정 정리 (인사이동 대비)
 //  · 사람 고르는 드롭다운은 이름만 (직급 · 팀 표시 안 함)
 //  · 팀장/실장 지정 칸을 하나로 (예전 leaderId → leadId, 결재 알림이 실제로 이 값을 봄)
@@ -20179,31 +20225,56 @@ renderSignaturesPage = function () {
   return r;
 };
 
-// ── 매출 열람 권한: 자동 계산 범위 보기 ──
-function s53Scope(u) {
-  if (!u) return { all: false, teams: [], label: '' };
-  if (u.role === 'admin' || u.approvalRole === 'ceo') return { all: true, teams: [], label: '전체 회사' };
-  if (u.approvalRole === 'deptHead') {
-    var d = (DB.depts || []).find(function (x) { return x.headId === u.id; }) || (DB.depts || []).find(function (x) { return x.id === scDeptOfTeam(u.team); });
-    if (d) return { all: false, teams: (DB.teams || []).filter(function (t) { return t.deptId === d.id; }).map(function (t) { return t.name; }), label: d.name };
+// ── 매출 열람 권한: 기본 자동 + 대표 · 관리자가 사람마다 바꾸기 ──
+scInfo = function () { return scopeOf(currentUser); };
+scProjects = function () { return scopeProjects(currentUser); };
+getAccessibleProjects = scProjects;
+function s53CanEditScope() { return !!currentUser && (currentUser.role === 'admin' || currentUser.approvalRole === 'ceo'); }
+function s53ScopeMode(uid, mode) {
+  var u = s53User(uid); if (!u || !s53CanEditScope()) return;
+  var old = u.salesScope || {};
+  if (mode === 'auto') delete u.salesScope;
+  else {
+    var ids = old.mode === mode ? (old.ids || []) : [];
+    if (!ids.length && mode === 'depts') { var d = aprUserDept(u); if (d) ids = [d.id]; }
+    if (!ids.length && mode === 'teams') { var t = s53Team(u.team); if (t) ids = [t.id]; }
+    u.salesScope = { mode: mode, ids: ids };
   }
-  return { all: false, teams: [u.team].filter(Boolean), label: u.team || '내 팀' };
+  saveDB(); renderPermissionsPage(); showToast(u.name + '님 매출 열람: ' + scopeOf(u).label);
 }
-scInfo = function () { return s53Scope(currentUser); };
+function s53ScopeToggle(uid, id) {
+  var u = s53User(uid); if (!u || !u.salesScope || !s53CanEditScope()) return;
+  var ids = u.salesScope.ids || (u.salesScope.ids = []), i = ids.indexOf(id);
+  if (i >= 0) ids.splice(i, 1); else ids.push(id);
+  saveDB(); renderPermissionsPage();
+}
+function s53ScopeResetAll() {
+  if (!s53CanEditScope()) return;
+  var n = (DB.users || []).filter(function (u) { return u.salesScope; }).length; if (!n) { showToast('바꾼 사람이 없어요 (모두 자동)'); return; }
+  if (!confirm('따로 정한 ' + n + '명의 매출 열람 범위를 모두 자동(직급 · 소속 기준)으로 되돌릴까요?')) return;
+  (DB.users || []).forEach(function (u) { delete u.salesScope; }); saveDB(); renderPermissionsPage(); showToast('모두 자동으로 되돌렸어요');
+}
 renderPermissionsPage = function () {
   var el = document.getElementById('permissions-content'); if (!el) return;
-  var E = qtEsc, page = document.getElementById('page-admin-permissions');
+  var E = qtEsc, page = document.getElementById('page-admin-permissions'), can = s53CanEditScope();
   if (page) {
-    var intro = page.firstElementChild; if (intro && !intro.dataset.s53) { intro.dataset.s53 = '1'; intro.innerHTML = '<div class="us-note" style="margin:0"><b>매출 열람 범위는 자동으로 정해져요.</b> 대표 · 관리자는 회사 전체, 본부장은 맡은 본부의 팀들, 팀장/실장과 팀원은 자기 팀 프로젝트만 봐요.<br>인사이동이 있으면 <b>서명 이미지 관리 › 결재 권한 설정</b>이나 <b>사용자 관리</b>에서 소속 팀 · 결재 권한만 바꾸면 바로 반영돼요. (매출 · 수익률은 완료된 프로젝트 기준)</div>'; }
-    var hd = page.querySelector('.card-header'); if (hd) hd.innerHTML = '<span class="card-title">직원별 매출 열람 범위</span>';
+    var intro = page.firstElementChild; if (intro && !intro.dataset.s53) { intro.dataset.s53 = '1'; intro.innerHTML = '<div class="us-note" style="margin:0"><b>기본은 자동</b>이에요 — 대표 · 관리자는 회사 전체, 본부장은 맡은 본부, 팀장/실장 · 팀원은 자기 팀. 사람마다 <b>회사 전체 / 본부 선택 / 팀 선택 / 본인 담당만</b>으로 따로 바꿀 수 있어요. 어느 범위든 본인이 담당자인 프로젝트는 항상 보여요.<br>인사이동: <b>자동</b>인 사람은 소속 팀만 바꾸면 따라가요. <b>본부 선택</b>은 그 본부에 팀이 생기거나 옮겨도 따라가고, <b>팀 선택</b>은 고른 팀 그대로예요.</div>'; }
+    var hd = page.querySelector('.card-header'); if (hd) hd.innerHTML = '<span class="card-title">직원별 매출 열람 범위</span>' + (can ? '<button class="btn btn-secondary btn-sm" onclick="s53ScopeResetAll()">모두 자동으로 되돌리기</button>' : '');
   }
+  var chips = function (u) {
+    var c = u.salesScope; if (!c || (c.mode !== 'depts' && c.mode !== 'teams')) return '';
+    var list = c.mode === 'depts' ? (DB.depts || []) : (DB.teams || []);
+    if (!list.length) return '<div class="s53-chips"><span class="org-sub">' + (c.mode === 'depts' ? '등록된 본부가 없어요' : '등록된 팀이 없어요') + '</span></div>';
+    return '<div class="s53-chips">' + list.map(function (x) { var on = (c.ids || []).indexOf(x.id) >= 0; return '<button class="s53-chip' + (on ? ' on' : '') + '"' + (can ? ' onclick="s53ScopeToggle(\'' + u.id + '\',\'' + x.id + '\')"' : ' disabled') + '>' + (on ? '✓ ' : '') + E(x.name) + '</button>'; }).join('') + '</div>';
+  };
   var rows = s53Active().map(function (u) {
-    var s = s53Scope(u), d = typeof aprUserDept === 'function' ? aprUserDept(u) : null;
-    var who = u.role === 'admin' ? '관리자' : (S53_ROLE[u.approvalRole] || '팀원');
-    var scope = s.all ? '<b style="color:var(--green)">회사 전체</b>' : s.teams.length ? '<b>' + E(s.label) + '</b>' + (s.teams.length > 1 || s.label !== s.teams[0] ? ' <span class="org-sub">(' + E(s.teams.join(', ')) + ')</span>' : '') : '<span style="color:var(--orange)">소속 팀이 없어 자기 담당 프로젝트만</span>';
-    return '<tr style="cursor:default"><td style="font-weight:600">' + E(u.name) + '</td><td>' + E(who) + '</td><td>' + (u.team ? E(u.team) : '<span style="color:var(--text3)">팀 없음</span>') + '</td><td>' + (d ? E(d.name) : '<span style="color:var(--text3)">-</span>') + '</td><td>' + scope + '</td></tr>';
+    var s = scopeOf(u), d = aprUserDept(u), who = u.approvalRole === 'ceo' ? '대표' : u.role === 'admin' ? '관리자' : (S53_ROLE[u.approvalRole] || '팀원');
+    var mode = (u.salesScope && u.salesScope.mode) || 'auto', ceo = u.approvalRole === 'ceo';
+    var sel = ceo ? '<span class="org-sub">대표는 항상 회사 전체</span>' : '<select class="form-select s53-sel s53-scope' + (mode !== 'auto' ? ' on' : '') + '"' + (can ? '' : ' disabled') + ' onchange="s53ScopeMode(\'' + u.id + '\',this.value)">' + Object.keys(SC_MODES).map(function (k) { return '<option value="' + k + '"' + (k === mode ? ' selected' : '') + '>' + SC_MODES[k] + '</option>'; }).join('') + '</select>';
+    var res = s.all ? '<b style="color:var(--green)">회사 전체</b>' : s.teams.length ? '<b>' + E(s.label) + '</b>' + (s.teams.length > 1 || s.label !== s.teams[0] ? ' <span class="org-sub">(' + E(s.teams.join(', ')) + ')</span>' : '') : '<span style="color:var(--orange)">본인 담당 프로젝트만</span>';
+    return '<tr style="cursor:default"><td style="font-weight:600;white-space:nowrap">' + E(u.name) + '</td><td>' + E(who) + '</td><td>' + (u.team ? E(u.team) : '<span style="color:var(--text3)">팀 없음</span>') + (d ? ' <span class="org-sub">' + E(d.name) + '</span>' : '') + '</td><td>' + sel + '</td><td>' + res + chips(u) + '</td></tr>';
   }).join('');
-  el.innerHTML = '<div class="table-wrap"><table><thead><tr><th>이름</th><th>권한</th><th>소속 팀</th><th>본부</th><th>볼 수 있는 매출</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  el.innerHTML = '<div class="table-wrap"><table class="s53-perm"><thead><tr><th>이름</th><th>권한</th><th>소속</th><th>열람 범위</th><th>볼 수 있는 매출 · 프로젝트</th></tr></thead><tbody>' + rows + '</tbody></table></div>' + (can ? '' : '<div class="org-sub" style="padding:10px 4px">대표 · 관리자만 바꿀 수 있어요.</div>');
 };
 
 // ════════════════════════════════════════════

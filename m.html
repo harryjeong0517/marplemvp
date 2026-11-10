@@ -5017,6 +5017,50 @@ myTurnLeaves = function () { return []; };
 window.addEventListener('hashchange', function () { if (/^#leave/.test(location.hash)) location.hash = 'home'; });
 if (/^#leave/.test(location.hash)) location.hash = 'home';
 
+// ════════════════════════════════════════════
+//  매출 · 프로젝트 열람 범위 (PC · 모바일 공용, 53차)
+//  기본 = 자동: 대표 · 관리자 → 회사 전체 / 본부장 → 맡은 본부 / 팀장·팀원 → 자기 팀
+//  대표 · 관리자가 사람마다 바꿀 수 있음: users[].salesScope = { mode: 'all'|'depts'|'teams'|'self', ids: [...] }
+//  · 본부 선택 = 그 본부에 속한 팀 전부 (팀이 새로 생기거나 옮겨도 따라감)
+//  · 어느 범위든 본인이 담당자인 프로젝트는 항상 보임
+// ════════════════════════════════════════════
+var SC_MODES = { auto: '자동 (직급 · 소속 기준)', all: '회사 전체', depts: '본부 선택', teams: '팀 선택', self: '본인 담당만' };
+function scTeamDept(name) { var t = (DB.teams || []).find(function (x) { return x.name === name; }); return t ? t.deptId : null; }
+function scAuto(u) {
+  if (!u) return { all: false, teams: [], label: '' };
+  if (u.role === 'admin' || u.approvalRole === 'ceo') return { all: true, teams: [], label: '회사 전체' };
+  if (u.approvalRole === 'deptHead') {
+    var d = (DB.depts || []).find(function (x) { return x.headId === u.id; }) || (DB.depts || []).find(function (x) { return x.id === (scTeamDept(u.team) || u.deptId); });
+    if (d) return { all: false, teams: (DB.teams || []).filter(function (t) { return t.deptId === d.id; }).map(function (t) { return t.name; }), label: d.name };
+  }
+  return { all: false, teams: [u.team].filter(Boolean), label: u.team || '본인 담당만' };
+}
+function scopeOf(u) {
+  if (!u) return { all: false, teams: [], label: '' };
+  if (u.approvalRole === 'ceo') return { all: true, teams: [], label: '회사 전체' };
+  var c = u.salesScope, m = c && c.mode, ids = (c && c.ids) || [];
+  if (m === 'all') return { all: true, teams: [], label: '회사 전체', custom: true };
+  if (m === 'self') return { all: false, teams: [], label: '본인 담당만', custom: true };
+  if (m === 'depts') {
+    var ds = (DB.depts || []).filter(function (d) { return ids.indexOf(d.id) >= 0; });
+    return { all: false, teams: (DB.teams || []).filter(function (t) { return ids.indexOf(t.deptId) >= 0; }).map(function (t) { return t.name; }), label: ds.map(function (d) { return d.name; }).join(', ') || '고른 본부 없음', custom: true };
+  }
+  if (m === 'teams') {
+    var ts = (DB.teams || []).filter(function (t) { return ids.indexOf(t.id) >= 0; }).map(function (t) { return t.name; });
+    return { all: false, teams: ts, label: ts.join(', ') || '고른 팀 없음', custom: true };
+  }
+  return scAuto(u);
+}
+function scopeProjects(u) {
+  var ps = (DB.projects || []).filter(Boolean); if (!u) return [];
+  var s = scopeOf(u); if (s.all) return ps;
+  return ps.filter(function (p) { return s.teams.indexOf(p.team) >= 0 || p.manager === u.name || p.manager === u.id; });
+}
+
+// ── 53차: 프로젝트 · 매출 열람 범위를 PC와 똑같이 (설정 › 매출 열람 권한) ──
+projects = function () { return me ? scopeProjects(me) : []; };
+canSeeMoney = function (p) { if (!me) return false; var s = scopeOf(me); return s.all || s.teams.indexOf(p.team) >= 0 || p.manager === me.name || p.manager === me.id; };
+
 // ════ 35차 — 리뉴얼 화면 연결 (현장 모드 카드 · 빠른 기록 · 더보기 · 홈 알림 배너) ════
 PUSHM.st = '';
 function pmRefresh() { if (!me) return; pmState().then(function (s) { var ch = PUSHM.st !== s; PUSHM.st = s; if (ch && (location.hash || '#home').indexOf('#home') === 0) render(); }); }
