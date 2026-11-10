@@ -1,0 +1,6 @@
+{
+  "name": "marplemvp",
+  "private": true,
+  "description": "MARPLE MVP — 정적 화면 + 푸시 알림 서버 함수(api/push.js)",
+  "dependencies": { "web-push": "3.6.7" }
+}
