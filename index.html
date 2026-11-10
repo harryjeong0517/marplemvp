@@ -1950,6 +1950,7 @@ tr.own-r{background:rgba(124,58,237,.03)}
 .s53-chip.on{background:#e3f4fc;border-color:#9fd3ef;color:#035a85;font-weight:600}
 .s53-chip:disabled{cursor:default;opacity:.7}
 .s53-perm td{vertical-align:middle}
+.s53-stg{display:flex;align-items:flex-end;gap:8px}.s53-stg label{flex:1;display:flex;flex-direction:column;gap:3px}.s53-stg small{font-size:11px;color:var(--text3)}.s53-stg i{font-style:normal;color:var(--text3);padding-bottom:9px}
 
 /* ── 메뉴 리뉴얼 ── */
 nav .nav-section.rn-old { display: none !important; }
@@ -7255,7 +7256,7 @@ function buildPayStatusCell(pay, grpPay) {
             : nxt ? 'var(--orange)'
             : 'var(--border2)';
     var ic  = ok ? '✓' : rej ? '✗' : nxt ? '●' : '○';
-    var lbl = (APPROVAL_LABELS[r] || r).replace('이사','');
+    var lbl = r === 'ceo' ? String(APPROVAL_LABELS[r] || r).replace(/이사$/, '') || '대표' : (APPROVAL_LABELS[r] || r);
     var arrow = r !== 'ceo' ? '<span style="color:var(--text3);font-size:9px;"> › </span>' : '';
     return '<span style="color:' + col + ';font-size:11px;font-weight:600;" title="' + lbl + '">' + ic + lbl + '</span>' + arrow;
   }).join('');
@@ -20022,6 +20023,64 @@ function scopeProjects(u) {
 }
 
 // ════════════════════════════════════════════
+//  결재 단계 이름 — 본부마다 바꾸기 (PC · 모바일 공용, 53차)
+//  DB.depts[].stageLabels = { teamLead: '본부장', deptHead: '이사', ceo: '대표이사' }  (비운 칸은 기본 이름)
+//  결재 순서 · 권한은 그대로(1단계 teamLead → 2단계 deptHead → 3단계 ceo), 화면 · 알림 · 메일 · 프린트에 찍히는 이름만 바뀜
+//  APPROVAL_LABELS[r] 를 읽을 때 "지금 다루는 페이먼트"의 본부 이름표를 돌려줌
+// ════════════════════════════════════════════
+var APR_LBL_FORCE = null, APR_LBL_HINT = null, APR_LBL_T = 0, APR_LBL_CTX = null, APR_LBL_BASE = null;
+function aprStageLabelsOfDept(d) {
+  var L = d && d.stageLabels; if (!L) return null;
+  var o = {}; ['teamLead', 'deptHead', 'ceo'].forEach(function (k) { var v = String(L[k] || '').trim(); if (v) o[k] = v; });
+  return Object.keys(o).length ? o : null;
+}
+function aprStageLabels(pay, p) { try { return aprStageLabelsOfDept(aprDeptOfTeam(aprTeamName(pay || {}, p))); } catch (e) { return null; } }
+function aprLabelsForUser(u) { return u ? aprStageLabelsOfDept(aprUserDept(u)) : null; }
+function aprBaseLabel(k) { return (APR_LBL_BASE && APR_LBL_BASE[k]) || k; }
+function aprLblHint(pay, p) {
+  APR_LBL_HINT = pay ? aprStageLabels(pay, p) : null;
+  if (!APR_LBL_T) APR_LBL_T = setTimeout(function () { APR_LBL_HINT = null; APR_LBL_T = 0; }, 0);
+}
+// fn 을 실행하는 동안만 이 페이먼트의 이름표로 (pay 없으면 그대로)
+function aprWithLabels(pay, p, fn, self, args) {
+  if (!pay && !p) return fn.apply(self, args || []);
+  var prev = APR_LBL_FORCE; APR_LBL_FORCE = aprStageLabels(pay, p) || {};
+  try { return fn.apply(self, args || []); } finally { APR_LBL_FORCE = prev; }
+}
+function aprWithUserLabels(u, fn, self, args) {
+  var prev = APR_LBL_FORCE; APR_LBL_FORCE = aprLabelsForUser(u) || {};
+  try { return fn.apply(self, args || []); } finally { APR_LBL_FORCE = prev; }
+}
+// 원래 함수를 감싸서: ctx(인자들) → [pay, p]
+function aprLblWrap(name, ctx) {
+  var g = typeof window !== 'undefined' ? window : this, orig = g[name]; if (typeof orig !== 'function' || orig.__aprLbl) return;
+  var w = function () { var c = null; try { c = ctx.apply(this, arguments); } catch (e) {} return c ? aprWithLabels(c[0], c[1], orig, this, arguments) : orig.apply(this, arguments); };
+  w.__aprLbl = true; g[name] = w;
+}
+(function aprLblInstall() {
+  if (typeof APPROVAL_LABELS !== 'object' || APPROVAL_LABELS.__dyn) return;
+  APR_LBL_BASE = { teamLead: APPROVAL_LABELS.teamLead, deptHead: APPROVAL_LABELS.deptHead, ceo: APPROVAL_LABELS.ceo };
+  ['teamLead', 'deptHead', 'ceo'].forEach(function (k) {
+    Object.defineProperty(APPROVAL_LABELS, k, {
+      configurable: true, enumerable: true,
+      get: function () { var L = APR_LBL_FORCE || APR_LBL_HINT || (typeof APR_LBL_CTX === 'function' ? APR_LBL_CTX() : null); return (L && L[k]) || APR_LBL_BASE[k]; },
+      set: function (v) { APR_LBL_BASE[k] = v; }
+    });
+  });
+  Object.defineProperty(APPROVAL_LABELS, '__dyn', { value: true });
+  // 알림 받을 사람을 찾는 순간 = 그 페이먼트 이야기 중 → 같은 흐름 안에서는 그 본부 이름표
+  if (typeof aprUsers === 'function') { var _au = aprUsers; aprUsers = function (role, pay, p) { aprLblHint(pay, p); return _au.apply(this, arguments); }; }
+})();
+// 텍스트 안의 기본 이름(팀장/실장 · 본부장 · 대표이사)을 이 본부 이름으로 한 번에 바꾸기 (프린트 등)
+function aprLblText(html, L) {
+  if (!L || !html) return html;
+  var map = {}; ['teamLead', 'deptHead', 'ceo'].forEach(function (k) { if (L[k] && L[k] !== aprBaseLabel(k)) map[aprBaseLabel(k)] = L[k]; });
+  var keys = Object.keys(map).sort(function (a, b) { return b.length - a.length; }); if (!keys.length) return html;
+  var re = new RegExp(keys.map(function (k) { return k.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'); }).join('|'), 'g');
+  return String(html).replace(re, function (m) { return map[m]; });
+}
+
+// ════════════════════════════════════════════
 //  53차 — 설정 정리 (인사이동 대비)
 //  · 사람 고르는 드롭다운은 이름만 (직급 · 팀 표시 안 함)
 //  · 팀장/실장 지정 칸을 하나로 (예전 leaderId → leadId, 결재 알림이 실제로 이 값을 봄)
@@ -20336,6 +20395,110 @@ function s53Purge() {
   console.info('동기화 제외 대상 정리:', gone.map(function (u) { return u.name; }).join(', '));
 }
 setTimeout(s53Purge, 3000); setInterval(s53Purge, 15000);
+
+// ════ 결재 단계 이름: 본부마다 (예: 인센티브서비스본부 = 본부장 → 이사 → 대표이사) ════
+function s53PayP(pay) { var f = pay && pay.approval ? aprFindPay(pay.approval) : null; return f ? f.p : null; }
+APR_LBL_CTX = function () {
+  var m = document.getElementById('payment-modal'); if (!m || !m.classList.contains('open')) return null;
+  var c = typeof currentPaymentContext !== 'undefined' ? currentPaymentContext : null; if (!c || !c.pid) return null;
+  var p = (DB.projects || []).find(function (x) { return x.id === c.pid; }), pay = getPayForContext(c.pid, c.itemId, c.gpId || null);
+  return aprStageLabels(pay || {}, p);
+};
+aprLblWrap('buildPayStatusCell', function (pay) { return [pay, s53PayP(pay)]; });
+aprLblWrap('approvalStatusLabel', function (ap) { var f = ap && aprFindPay(ap); return f ? [f.pay, f.p] : null; });
+aprLblWrap('rnSteps', function (ap) { var f = ap && aprFindPay(ap); return f ? [f.pay, f.p] : null; });
+['quickApprove', 'quickReject', '_renderRejectionBanner'].forEach(function (n) { aprLblWrap(n, function (pid, itemId, gpId) { var c = prCtx(pid, itemId, gpId); return [c.pay, c.p]; }); });
+aprLblWrap('prAskNext', function (c) { return c ? [c.pay, c.p] : null; });
+aprLblWrap('renderProjectDetail', function (p) { return p ? [{}, p] : null; });
+aprLblWrap('usCard', function (u) { return u ? [{ createdBy: u.name }, null] : null; });
+// 프린트(페이먼트 확인서): 이름이 코드에 박혀 있어서 결과 글자를 바꿈
+(function () { if (typeof pp2Page !== 'function') return; var _pp = pp2Page; pp2Page = function (rec) { var h = aprWithLabels(rec && rec.pay, rec && rec.p, _pp, this, arguments); return aprLblText(h, rec && aprStageLabels(rec.pay, rec.p)); }; })();
+
+// 사람 기준 단계 이름 (그 사람 본부의 이름표)
+function s53RoleName(u, k) { var L = aprLabelsForUser(u); return (L && L[k]) || S53_ROLE[k] || ''; }
+// 본부 수정 창: 결재 단계 이름 칸
+openAddDeptModal = (function (orig) {
+  return function (id) {
+    var r = orig.apply(this, arguments), d = id ? DB.depts.find(function (x) { return x.id === id; }) : null, L = (d && d.stageLabels) || {}, E = qtEsc;
+    var ex = document.getElementById('s53-stage-box'); if (ex) ex.remove();
+    var host = document.getElementById('org-dept-extra') || document.getElementById('dept-name-input').closest('.form-group');
+    host.insertAdjacentHTML('afterend', '<div class="form-group" id="s53-stage-box"><label class="form-label">결재 단계 이름 <span style="font-weight:500;color:var(--text3)">— 이 본부만 다르게 부를 때 (비우면 기본)</span></label>' +
+      '<div class="s53-stg">' + [['teamLead', '1단계'], ['deptHead', '2단계'], ['ceo', '3단계']].map(function (x) { return '<label><small>' + x[1] + '</small><input class="form-input" id="s53-stg-' + x[0] + '" placeholder="' + E(aprBaseLabel(x[0])) + '" value="' + E(L[x[0]] || '') + '"></label>'; }).join('<i>→</i>') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text3);margin-top:6px;line-height:1.5">결재 순서는 그대로예요: 1단계 = 각 팀의 팀장/실장 칸에 지정한 사람, 2단계 = 위 본부장 칸에 지정한 사람, 3단계 = 대표.<br>예) 인센티브서비스본부: 1단계 "본부장"(심상철) → 2단계 "이사"(황보훈) → 3단계 "대표이사"</div></div>');
+    var Ld = aprStageLabelsOfDept(d), hl = document.querySelector('#org-dept-extra .form-label'), hh = document.querySelector('#org-dept-extra .form-group div');
+    if (Ld && hl) hl.textContent = (Ld.deptHead || '본부장') + ' (2단계 결재)';
+    if (Ld && hh) hh.textContent = '고르면 이 본부 페이먼트의 2단계(' + (Ld.deptHead || '본부장') + ') 결재를 이 사람이 해요. 1단계(' + (Ld.teamLead || '팀장/실장') + ')는 팀 관리에서 팀마다 지정해요.';
+    return r;
+  };
+})(openAddDeptModal);
+saveDept = (function (orig) {
+  return function () {
+    var vals = {}; ['teamLead', 'deptHead', 'ceo'].forEach(function (k) { var el = document.getElementById('s53-stg-' + k); vals[k] = el ? el.value.trim() : ''; });
+    var before = DB.depts.map(function (d) { return d.id; }), editing = ORG.dept;
+    var r = orig.apply(this, arguments);
+    var d = editing ? DB.depts.find(function (x) { return x.id === editing; }) : DB.depts.find(function (x) { return before.indexOf(x.id) < 0; });
+    if (d) {
+      var L = {}; Object.keys(vals).forEach(function (k) { if (vals[k] && vals[k] !== aprBaseLabel(k)) L[k] = vals[k]; });
+      if (Object.keys(L).length) d.stageLabels = L; else delete d.stageLabels;
+      saveDB(); renderTeamsPage();
+    }
+    return r;
+  };
+})(saveDept);
+// 팀 / 본부 목록에 이름표 반영
+var _s53LblTeams = renderTeamsPage;
+renderTeamsPage = function () {
+  var r = _s53LblTeams.apply(this, arguments);
+  try {
+    var E = qtEsc;
+    (DB.depts || []).forEach(function (d, i) {
+      var L = aprStageLabelsOfDept(d); var row = document.querySelectorAll('#dept-list .s53-row')[i]; if (!row) return;
+      if (L) {
+        var lab = row.querySelector('.s53-act label'); if (lab) lab.textContent = (L.deptHead || '본부장') + ' (2단계)';
+        var opt = row.querySelector('.s53-sel option[value=""]'); if (opt) opt.textContent = (L.deptHead || '본부장') + ' 자동';
+        var sub = row.querySelector('.s53-main .org-sub'), ts = (DB.teams || []).filter(function (t) { return t.deptId === d.id; });
+        var l1 = ts.map(function (t) { return s53Name(t.leadId); }).filter(function (n, j, arr) { return n && arr.indexOf(n) === j; });
+        if (sub) sub.innerHTML = E(L.teamLead || aprBaseLabel('teamLead')) + ' ' + (l1.length ? '<b class="s53-who">' + E(l1.join(', ')) + '</b>' : '미지정') + ' · ' + E(L.deptHead || aprBaseLabel('deptHead')) + ' ' + (d.headId ? '<b class="s53-who">' + E(s53Name(d.headId)) + '</b>' : '자동') + ' · 팀 ' + ts.length + '개' + (ts.length ? ' (' + E(ts.map(function (t) { return t.name; }).join(', ')) + ')' : '');
+        if (sub) sub.insertAdjacentHTML('afterend', '<div class="s53-line">결재 단계: <b>' + E(L.teamLead || aprBaseLabel('teamLead')) + '</b> → <b>' + E(L.deptHead || aprBaseLabel('deptHead')) + '</b> → <b>' + E(L.ceo || aprBaseLabel('ceo')) + '</b></div>');
+      }
+    });
+    (DB.teams || []).forEach(function (t, i) {
+      var L = aprStageLabelsOfDept(s53Dept(t.deptId)); var row = document.querySelectorAll('#team-list .s53-row')[i]; if (!row || !L) return;
+      var lab = row.querySelector('.s53-act label'); if (lab) lab.textContent = (L.teamLead || '팀장/실장') + ' (1단계)';
+      var opt = row.querySelector('.s53-sel option[value=""]'); if (opt) opt.textContent = (L.teamLead || '팀장/실장') + ' 자동';
+      var line = row.querySelector('.s53-line'); if (line) line.innerHTML = aprLineText(t.name).map(function (l, j) { var k = ['teamLead', 'deptHead', 'ceo'][j]; return E(L[k] || aprBaseLabel(k)) + ' <b style="color:' + (l.set ? 'var(--blue)' : 'var(--text3)') + '">' + E(l.who) + '</b>'; }).join(' → ');
+    });
+  } catch (e) { console.warn('53차 이름표', e); }
+  return r;
+};
+// 서명 이미지 관리 표 · 매출 열람 표: 그 사람 본부의 이름으로
+var _s53LblSigs = renderSignaturesPage;
+renderSignaturesPage = function () {
+  var r = _s53LblSigs.apply(this, arguments);
+  try {
+    var rows = document.querySelectorAll('#approval-role-tbody tr'), us = s53Active();
+    rows.forEach(function (tr, i) {
+      var u = us[i]; if (!u || !aprLabelsForUser(u)) return;
+      if (tr.children[4]) tr.children[4].textContent = aprLblText(tr.children[4].textContent, aprLabelsForUser(u));
+      tr.querySelectorAll('select')[1] && [].forEach.call(tr.querySelectorAll('select')[1].options, function (o, j) { if (o.value) o.textContent = s53RoleName(u, o.value) + (o.value === 'ceo' ? '' : ' (' + (o.value === 'teamLead' ? 1 : 2) + '단계)'); });
+    });
+  } catch (e) {}
+  return r;
+};
+var _s53LblPerm = renderPermissionsPage;
+renderPermissionsPage = function () {
+  var r = _s53LblPerm.apply(this, arguments);
+  try { var us = s53Active(); document.querySelectorAll('#permissions-content tbody tr').forEach(function (tr, i) { var u = us[i]; if (u && u.approvalRole && u.approvalRole !== 'ceo' && aprLabelsForUser(u)) tr.children[1].textContent = s53RoleName(u, u.approvalRole); }); } catch (e) {}
+  return r;
+};
+// 2단계 권한자를 팀의 1단계로 지정하면 알려 주기
+s53SetLead = (function (orig) {
+  return function (kind, id, uid) {
+    var u = s53User(uid), r = orig.apply(this, arguments);
+    if (kind === 'team' && u && u.approvalRole === 'deptHead') showToast(u.name + '님은 지금 2단계 결재 권한이에요. 이 팀의 1단계로 결재하려면 서명 이미지 관리 › 결재 권한에서 1단계로 바꿔 주세요', 'error');
+    return r;
+  };
+})(s53SetLead);
 
 // ════════════════════════════════════════════
 //  메뉴 리뉴얼 — 9개 메뉴 + 페이지 위 탭 + 결재함 + Ctrl K
