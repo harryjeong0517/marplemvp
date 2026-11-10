@@ -1931,6 +1931,20 @@ tr.own-r{background:rgba(124,58,237,.03)}
 .login-sub.mf-login b{color:var(--text);font-weight:900}
 .sidebar-logo{cursor:pointer}
 .nav-item[onclick="navigate('leave')"],#nav-leave-approval,.nav-item[onclick="navigate('admin-leave')"]{display:none!important}
+/* 53차 — 설정 정리 */
+.s53-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+.s53-row:last-child{border-bottom:0}
+.s53-main{flex:1;min-width:0;font-size:13px}
+.s53-main>b{font-size:13.5px}
+.s53-who{color:var(--blue)}
+.s53-line{font-size:11.5px;color:var(--text2);margin-top:3px}
+.s53-act{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.s53-act label{font-size:11px;color:var(--text3);white-space:nowrap}
+.s53-sel{width:auto;min-width:110px;max-width:150px;height:32px;font-size:12.5px;padding:0 26px 0 10px}
+.s53-empty{color:var(--text3);font-size:13px;padding:14px 4px}
+.s53-hint{font-size:12px;color:var(--text3);margin-left:10px}
+@media (max-width:1100px){.s53-row{flex-wrap:wrap}.s53-act{width:100%;justify-content:flex-end}}
+
 /* ── 메뉴 리뉴얼 ── */
 nav .nav-section.rn-old { display: none !important; }
 .rn-search { display: flex; align-items: center; gap: 8px; background: var(--side2, #1f2937); border-radius: 9px; padding: 8px 10px; font-size: 12.5px; color: #8b95a7; margin: 0 0 10px; cursor: pointer; }
@@ -19959,6 +19973,237 @@ renderUsersPage = function () {
     host.insertAdjacentHTML('afterend', '<div id="lgc-bar" class="lg-bar" style="background:' + (n ? '#fff7ed;border-color:#fed7aa' : '#f0fdf4;border-color:#bbf7d0') + '"><div><b>AWS 이관 점검</b>' + (n ? '예전 Supabase 저장소에 남은 첨부 <b style="color:#c2410c">' + n + '개</b> — 이관 전에 구글 드라이브로 옮겨 주세요' : '✓ 첨부는 전부 구글 드라이브에 있어요 (이관 준비 완료)') + '</div>' + (n ? '<button class="btn btn-primary btn-sm" onclick="lgcMove()">드라이브로 옮기기</button>' : '') + '</div>');
   } catch (e) {}
   return r;
+};
+
+// ════════════════════════════════════════════
+//  53차 — 설정 정리 (인사이동 대비)
+//  · 사람 고르는 드롭다운은 이름만 (직급 · 팀 표시 안 함)
+//  · 팀장/실장 지정 칸을 하나로 (예전 leaderId → leadId, 결재 알림이 실제로 이 값을 봄)
+//  · 팀 / 본부 관리 화면에서 바로 팀장/실장 · 본부장 바꾸기
+//  · 서명 이미지 관리 › 결재 권한 설정 표에서 소속 팀 바로 바꾸기
+//  · 사람이 다른 팀으로 옮기면 예전 팀의 팀장 지정 · 다른 본부의 본부장 지정을 자동으로 풀기
+//  · 매출 열람 권한: 결재 권한 + 소속 팀으로 자동 계산되는 범위를 그대로 보여 주기
+// ════════════════════════════════════════════
+var S53_ROLE = { teamLead: '팀장/실장', deptHead: '본부장', ceo: '대표' };
+function s53Active() { return (DB.users || []).filter(function (u) { return u.status === 'active'; }).sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'ko'); }); }
+function s53User(id) { return id ? (DB.users || []).find(function (u) { return u.id === id; }) || null : null; }
+function s53Name(id) { var u = s53User(id); return u ? u.name : ''; }
+function s53Team(name) { return name ? (DB.teams || []).find(function (t) { return t.name === name; }) || null : null; }
+function s53Dept(id) { return id ? (DB.depts || []).find(function (d) { return d.id === id; }) || null : null; }
+// 이름만 보이는 사람 목록 (first: 맨 위에 따로 묶을 사람들 — 예: 이 팀 사람)
+function s53Opts(sel, empty, first) {
+  var E = qtEsc, all = s53Active(), top = first ? all.filter(function (u) { return first.indexOf(u.id) >= 0; }) : [];
+  var rest = all.filter(function (u) { return top.indexOf(u) < 0; });
+  var opt = function (u) { return '<option value="' + u.id + '"' + (u.id === sel ? ' selected' : '') + '>' + E(u.name) + '</option>'; };
+  var h = '<option value="">' + E(empty || '선택 안 함') + '</option>';
+  if (top.length) h += '<optgroup label="이 팀">' + top.map(opt).join('') + '</optgroup><optgroup label="전체 직원">' + rest.map(opt).join('') + '</optgroup>';
+  else h += all.map(opt).join('');
+  var cur = s53User(sel); if (sel && (!cur || cur.status !== 'active')) h += '<option value="' + E(sel) + '" selected>' + E(cur ? cur.name + ' (비활성)' : '(없는 사람)') + '</option>';
+  return h;
+}
+orgUserOpts = function (sel) { return s53Opts(sel); };
+
+// ── 예전 데이터 정리: 팀장/실장 칸 하나로 ──
+function s53Fix() {
+  var ch = false;
+  (DB.teams || []).forEach(function (t) { if (t.leaderId !== undefined) { if (t.leaderId && !t.leadId) t.leadId = t.leaderId; delete t.leaderId; ch = true; } });
+  return ch;
+}
+var _s53Mapped = aprMapped;
+aprMapped = function (role, team) { if (role === 'teamLead') { var t = aprTeamObj(team); return t ? aprUserById(t.leadId || t.leaderId) : null; } return _s53Mapped.apply(this, arguments); };
+
+// ── 인사이동 처리 ──
+// 지정이 풀린 사람이 더 이상 아무 팀 · 본부도 맡지 않으면 결재 권한도 내림
+// (role: 풀린 자리 — 팀장/실장 자리가 풀렸으면 팀장/실장 권한만, 본부장 자리면 본부장 권한만 봄)
+function s53Demote(uid, notes, role) {
+  var u = s53User(uid); if (!u || u.approvalRole !== role) return;
+  var still = role === 'teamLead' ? (DB.teams || []).some(function (t) { return t.leadId === uid; }) : (DB.depts || []).some(function (d) { return d.headId === uid; });
+  if (!still) { u.approvalRole = null; notes.push(u.name + '님 ' + S53_ROLE[role] + ' 결재 권한 해제 (필요하면 서명 이미지 관리에서 다시 지정)'); }
+}
+function s53Promote(uid, role) { var u = s53User(uid); if (!u || u.approvalRole === 'ceo') return; if (role === 'deptHead' || u.approvalRole !== 'deptHead') u.approvalRole = role; }
+// 사람이 팀을 옮긴 뒤: 예전 팀의 팀장 지정 · 다른 본부의 본부장 지정 풀기
+function s53AfterMove(u, oldTeam, notes) {
+  if (!u || u.team === oldTeam) return;
+  var nt = s53Team(u.team);
+  (DB.teams || []).forEach(function (t) { if (t.leadId === u.id && t.name !== u.team) { t.leadId = ''; notes.push(u.name + '님은 ' + t.name + ' 팀장/실장 지정에서 빠졌어요'); } });
+  if (nt) (DB.depts || []).forEach(function (d) { if (d.headId === u.id && d.id !== nt.deptId) { d.headId = ''; notes.push(u.name + '님은 ' + d.name + ' 본부장 지정에서 빠졌어요'); } });
+}
+function s53SetTeam(u, team) { var t = s53Team(team); u.team = team || ''; if (t) u.deptId = t.deptId || ''; }
+function s53Done(msg, notes) { saveDB(); showToast(msg + (notes.length ? ' · ' + notes.join(' · ') : '')); }
+
+// ── 팀 / 본부 관리 ──
+function s53SetLead(kind, id, uid) {
+  var notes = [], o = (kind === 'team' ? DB.teams : DB.depts).find(function (x) { return x.id === id; }); if (!o) return;
+  var key = kind === 'team' ? 'leadId' : 'headId', prev = o[key] || '';
+  if (prev === uid) return;
+  o[key] = uid || ''; if (kind === 'team') delete o.leaderId;
+  if (uid) {
+    s53Promote(uid, kind === 'team' ? 'teamLead' : 'deptHead');
+    var u = s53User(uid);
+    if (kind === 'team' && u && u.team !== o.name) { var old = u.team; s53SetTeam(u, o.name); notes.push(u.name + '님을 ' + o.name + ' 소속으로 옮겼어요'); s53AfterMove(u, old, notes); o.leadId = uid; }
+  }
+  if (prev) s53Demote(prev, notes, kind === 'team' ? 'teamLead' : 'deptHead');
+  renderTeamsPage(); s53Done(uid ? (kind === 'team' ? '팀장/실장' : '본부장') + '을 ' + s53Name(uid) + '님으로 바꿨어요' : '지정을 풀었어요 (자동)', notes);
+}
+openAddTeamModal = (function (orig) {
+  return function (id) { s53Fix(); var r = orig.apply(this, arguments); var t = id ? DB.teams.find(function (x) { return x.id === id; }) : null; var sel = document.getElementById('team-leader-input'); if (sel) sel.innerHTML = s53Opts(t && t.leadId, '선택 안 함 (자동)', t ? s53Active().filter(function (u) { return u.team === t.name; }).map(function (u) { return u.id; }) : null);
+    document.querySelectorAll('#org-team-extra .org-m small').forEach(function (s) { s.textContent = s.textContent === '팀 없음' ? '팀 없음' : '현재 ' + s.textContent; }); return r; };
+})(openAddTeamModal);
+openAddDeptModal = (function (orig) {
+  return function (id) { var r = orig.apply(this, arguments); var d = id ? DB.depts.find(function (x) { return x.id === id; }) : null; var sel = document.getElementById('dept-head-input'); if (sel) sel.innerHTML = s53Opts(d && d.headId, '선택 안 함 (자동)'); return r; };
+})(openAddDeptModal);
+saveTeam = function () {
+  var name = document.getElementById('team-name-input').value.trim(), deptId = document.getElementById('team-dept-input').value, lead = (document.getElementById('team-leader-input') || {}).value || '';
+  if (!name) { showToast('팀명을 입력하세요', 'error'); return; }
+  s53Fix();
+  var t = ORG.team ? DB.teams.find(function (x) { return x.id === ORG.team; }) : null, oldName = t ? t.name : null, notes = [];
+  if (DB.teams.some(function (x) { return x.name === name && x !== t; })) { showToast('같은 이름의 팀이 있어요', 'error'); return; }
+  if (t) { t.name = name; t.deptId = deptId; } else { t = { id: genId(), name: name, deptId: deptId }; DB.teams.push(t); }
+  if (oldName && oldName !== name) { DB.users.forEach(function (u) { if (u.team === oldName) u.team = name; }); (DB.projects || []).forEach(function (p) { if (p.team === oldName) p.team = name; }); }
+  var picked = [].slice.call(document.querySelectorAll('#org-team-extra .org-ms input:checked')).map(function (i) { return i.value; });
+  if (lead && picked.indexOf(lead) < 0) picked.push(lead);
+  var prev = t.leadId || '';
+  t.leadId = lead;
+  DB.users.forEach(function (u) {
+    var old = u.team;
+    if (picked.indexOf(u.id) >= 0) { if (u.team !== name) { s53SetTeam(u, name); s53AfterMove(u, old, notes); } else u.deptId = deptId; }
+    else if (u.team === name) { u.team = ''; s53AfterMove(u, old, notes); }
+  });
+  t.leadId = lead;
+  if (lead) s53Promote(lead, 'teamLead');
+  if (prev && prev !== lead) s53Demote(prev, notes, 'teamLead');
+  closeModal('add-team-modal'); renderTeamsPage(); s53Done(ORG.team ? '팀을 수정했어요' : '팀을 추가했어요', notes);
+};
+saveDept = function () {
+  var name = document.getElementById('dept-name-input').value.trim(), head = (document.getElementById('dept-head-input') || {}).value || '';
+  if (!name) { showToast('본부명을 입력하세요', 'error'); return; }
+  var d = ORG.dept ? DB.depts.find(function (x) { return x.id === ORG.dept; }) : null, notes = [];
+  if (d) d.name = name; else { d = { id: genId(), name: name }; DB.depts.push(d); }
+  var prev = d.headId || ''; d.headId = head || '';
+  if (head) s53Promote(head, 'deptHead');
+  if (prev && prev !== head) s53Demote(prev, notes, 'deptHead');
+  closeModal('add-dept-modal'); renderTeamsPage(); s53Done(ORG.dept ? '본부를 수정했어요' : '본부를 추가했어요', notes);
+};
+deleteTeam = function (id) {
+  var t = DB.teams.find(function (x) { return x.id === id; }); if (!t) return;
+  var mem = (DB.users || []).filter(function (u) { return u.team === t.name; });
+  if (!confirm(t.name + ' 팀을 삭제할까요?' + (mem.length ? '\n소속 ' + mem.length + '명(' + mem.map(function (u) { return u.name; }).join(', ') + ')은 "팀 없음"이 되고 본부 소속은 그대로 남아요.' : '') + '\n지난 프로젝트에 적힌 팀 이름은 그대로 남아요.')) return;
+  var notes = [], lead = t.leadId;
+  mem.forEach(function (u) { u.team = ''; u.deptId = t.deptId || u.deptId || ''; });
+  DB.teams = DB.teams.filter(function (x) { return x.id !== id; });
+  if (lead) s53Demote(lead, notes, 'teamLead');
+  renderTeamsPage(); s53Done('팀을 삭제했어요', notes);
+};
+deleteDept = function (id) {
+  var d = DB.depts.find(function (x) { return x.id === id; }); if (!d) return;
+  var ts = DB.teams.filter(function (t) { return t.deptId === id; });
+  if (!confirm(d.name + ' 본부를 삭제할까요?' + (ts.length ? '\n소속 팀 ' + ts.length + '개(' + ts.map(function (t) { return t.name; }).join(', ') + ')는 지우지 않고 "본부 없음"으로 남겨요.' : ''))) return;
+  var notes = [], head = d.headId;
+  ts.forEach(function (t) { t.deptId = ''; });
+  (DB.users || []).forEach(function (u) { if (u.deptId === id) u.deptId = ''; });
+  DB.depts = DB.depts.filter(function (x) { return x.id !== id; });
+  if (head) s53Demote(head, notes, 'deptHead');
+  renderTeamsPage(); s53Done('본부를 삭제했어요', notes);
+};
+var _s53Teams = renderTeamsPage;
+renderTeamsPage = function () {
+  if (s53Fix()) saveDB();
+  var r = _s53Teams.apply(this, arguments);
+  try {
+    var dl = document.getElementById('dept-list'), tl = document.getElementById('team-list'), E = qtEsc;
+    var sel = function (kind, o, val, first) { return '<select class="form-select s53-sel" title="' + (kind === 'team' ? '팀장/실장' : '본부장') + ' 바꾸기" onchange="s53SetLead(\'' + kind + '\',\'' + o.id + '\',this.value)">' + s53Opts(val, kind === 'team' ? '팀장/실장 자동' : '본부장 자동', first) + '</select>'; };
+    if (dl) dl.innerHTML = (DB.depts || []).map(function (d) {
+      var ts = (DB.teams || []).filter(function (t) { return t.deptId === d.id; });
+      return '<div class="s53-row"><div class="s53-main"><b>' + E(d.name) + '</b><div class="org-sub">본부장 ' + (d.headId ? '<b class="s53-who">' + E(s53Name(d.headId)) + '</b>' : '자동 (본부 안 본부장 권한자)') + ' · 팀 ' + ts.length + '개' + (ts.length ? ' (' + E(ts.map(function (t) { return t.name; }).join(', ')) + ')' : '') + '</div></div>' +
+        '<div class="s53-act"><label>본부장</label>' + sel('dept', d, d.headId) + '<button class="btn btn-secondary btn-xs" onclick="openAddDeptModal(\'' + d.id + '\')">수정</button><button class="btn btn-danger btn-xs" onclick="deleteDept(\'' + d.id + '\')">삭제</button></div></div>';
+    }).join('') || '<div class="s53-empty">등록된 본부가 없어요. [+ 본부 추가]로 만들어 주세요.</div>';
+    if (tl) tl.innerHTML = (DB.teams || []).map(function (t) {
+      var d = s53Dept(t.deptId), mem = s53Active().filter(function (u) { return u.team === t.name; }), line = aprLineText(t.name);
+      return '<div class="s53-row"><div class="s53-main"><b>' + E(t.name) + '</b> <span class="org-sub">' + E(d ? d.name : '본부 없음') + '</span>' +
+        '<div class="org-sub">팀원 ' + mem.length + '명' + (mem.length ? ' (' + E(mem.map(function (u) { return u.name; }).join(', ')) + ')' : '') + '</div>' +
+        '<div class="s53-line">' + line.map(function (l) { return (S53_ROLE[{ '팀장': 'teamLead', '본부장': 'deptHead', '대표': 'ceo' }[l.role]] || l.role) + ' <b style="color:' + (l.set ? 'var(--blue)' : 'var(--text3)') + '">' + E(l.who) + '</b>'; }).join(' → ') + '</div></div>' +
+        '<div class="s53-act"><label>팀장/실장</label>' + sel('team', t, t.leadId, mem.map(function (u) { return u.id; })) + '<button class="btn btn-secondary btn-xs" onclick="openAddTeamModal(\'' + t.id + '\')">수정</button><button class="btn btn-danger btn-xs" onclick="deleteTeam(\'' + t.id + '\')">삭제</button></div></div>';
+    }).join('') || '<div class="s53-empty">등록된 팀이 없어요. [+ 팀 추가]로 만들어 주세요.</div>';
+    var help = document.getElementById('apr-help');
+    if (help) help.innerHTML = '<b>📋 조직 · 결재 라인</b><br>팀마다 <b>팀장/실장</b>, 본부마다 <b>본부장</b>을 고르면 페이먼트 결재 요청 알림 · 메일이 <b>그 사람에게만</b> 가고 결재도 그 사람만 해요. "자동"이면 같은 팀 팀장/실장 · 같은 본부 본부장 권한자에게 가요.<br><b>인사이동</b>: 팀 [수정]에서 팀원을 체크하거나, 사용자 관리 · 서명 이미지 관리에서 팀만 바꾸면 돼요. 옮긴 사람이 맡던 예전 팀장/실장 지정은 자동으로 풀려요.';
+  } catch (e) { console.warn('53차 조직', e); }
+  return r;
+};
+
+// ── 사용자 관리: 팀을 바꿔 저장하면 인사이동 처리 ──
+saveUser = (function (orig) {
+  return function () {
+    var id = editingUserId || ((document.getElementById('au-id') || {}).value || '').trim(), u0 = s53User(id), old = u0 ? u0.team : null;
+    var r = orig.apply(this, arguments);
+    var u = s53User(id);
+    if (u0 && u && old !== u.team) { var notes = []; s53AfterMove(u, old, notes); if (notes.length) { saveDB(); renderUsersPage(); showToast(notes.join(' · ')); } }
+    return r;
+  };
+})(saveUser);
+
+// ── 서명 이미지 관리 › 결재 권한 설정: 이름 · 소속 팀(바꾸기) · 결재 권한(바꾸기) ──
+function s53MoveTeam(uid, team) {
+  var u = s53User(uid); if (!u) return; var old = u.team, notes = [];
+  s53SetTeam(u, team); if (!team) { var keepDept = u.deptId; u.deptId = keepDept || ''; }
+  s53AfterMove(u, old, notes);
+  renderSignaturesPage(); s53Done(u.name + '님 소속을 ' + (team || '팀 없음') + '(으)로 바꿨어요', notes);
+}
+function s53SetRole(uid, role) {
+  var u = s53User(uid); if (!u) return; var notes = [];
+  setApprovalRole(uid, role);
+  if (role !== 'teamLead') (DB.teams || []).forEach(function (t) { if (t.leadId === uid) { t.leadId = ''; notes.push(t.name + ' 팀장/실장 지정 해제'); } });
+  if (role !== 'deptHead' && role !== 'ceo') (DB.depts || []).forEach(function (d) { if (d.headId === uid) { d.headId = ''; notes.push(d.name + ' 본부장 지정 해제'); } });
+  renderSignaturesPage(); s53Done(u.name + '님 결재 권한: ' + (S53_ROLE[role] || '없음'), notes);
+}
+var _s53Sigs = renderSignaturesPage;
+renderSignaturesPage = function () {
+  var r = _s53Sigs.apply(this, arguments);
+  try {
+    var tb = document.getElementById('approval-role-tbody'); if (!tb) return r;
+    var E = qtEsc, tbl = tb.closest('table'), hr = tbl && tbl.querySelector('thead tr');
+    if (hr) hr.innerHTML = '<th>이름</th><th>소속 팀</th><th>본부</th><th>결재 권한</th><th>맡은 곳</th>';
+    var teams = DB.teams || [];
+    tb.innerHTML = s53Active().map(function (u) {
+      var known = !u.team || teams.some(function (t) { return t.name === u.team; }), d = typeof aprUserDept === 'function' ? aprUserDept(u) : null;
+      var lead = teams.filter(function (t) { return t.leadId === u.id; }).map(function (t) { return t.name + ' 팀장/실장'; }).concat((DB.depts || []).filter(function (x) { return x.headId === u.id; }).map(function (x) { return x.name + ' 본부장'; }));
+      return '<tr style="cursor:default"><td style="font-weight:600">' + E(u.name) + '</td>' +
+        '<td><select class="form-select s53-sel" onchange="s53MoveTeam(\'' + u.id + '\',this.value)"><option value="">팀 없음</option>' + teams.map(function (t) { return '<option value="' + E(t.name) + '"' + (t.name === u.team ? ' selected' : '') + '>' + E(t.name) + '</option>'; }).join('') + (known ? '' : '<option value="' + E(u.team) + '" selected>' + E(u.team) + ' (목록에 없음)</option>') + '</select></td>' +
+        '<td>' + (d ? E(d.name) : '<span style="color:var(--text3)">-</span>') + '</td>' +
+        '<td><select class="form-select s53-sel" onchange="s53SetRole(\'' + u.id + '\',this.value)"><option value="">없음</option>' + ['teamLead', 'deptHead', 'ceo'].map(function (k) { return '<option value="' + k + '"' + (u.approvalRole === k ? ' selected' : '') + '>' + S53_ROLE[k] + '</option>'; }).join('') + '</select></td>' +
+        '<td style="font-size:12px;color:var(--text2)">' + (lead.length ? E(lead.join(', ')) : '<span style="color:var(--text3)">-</span>') + '</td></tr>';
+    }).join('');
+    var cardTitle = tbl && tbl.closest('.card') && tbl.closest('.card').querySelector('.card-title');
+    if (cardTitle && !cardTitle.dataset.s53) { cardTitle.dataset.s53 = '1'; cardTitle.insertAdjacentHTML('afterend', '<span class="s53-hint">인사이동이 있으면 여기서 소속 팀만 바꾸면 결재 라인 · 매출 열람 범위가 같이 바뀌어요</span>'); }
+    document.querySelectorAll('#sig-image-grid .us-h span').forEach(function (s) { s.textContent = s.textContent.replace(/^팀장(?!\/)/, '팀장/실장'); });
+  } catch (e) { console.warn('53차 서명', e); }
+  return r;
+};
+
+// ── 매출 열람 권한: 자동 계산 범위 보기 ──
+function s53Scope(u) {
+  if (!u) return { all: false, teams: [], label: '' };
+  if (u.role === 'admin' || u.approvalRole === 'ceo') return { all: true, teams: [], label: '전체 회사' };
+  if (u.approvalRole === 'deptHead') {
+    var d = (DB.depts || []).find(function (x) { return x.headId === u.id; }) || (DB.depts || []).find(function (x) { return x.id === scDeptOfTeam(u.team); });
+    if (d) return { all: false, teams: (DB.teams || []).filter(function (t) { return t.deptId === d.id; }).map(function (t) { return t.name; }), label: d.name };
+  }
+  return { all: false, teams: [u.team].filter(Boolean), label: u.team || '내 팀' };
+}
+scInfo = function () { return s53Scope(currentUser); };
+renderPermissionsPage = function () {
+  var el = document.getElementById('permissions-content'); if (!el) return;
+  var E = qtEsc, page = document.getElementById('page-admin-permissions');
+  if (page) {
+    var intro = page.firstElementChild; if (intro && !intro.dataset.s53) { intro.dataset.s53 = '1'; intro.innerHTML = '<div class="us-note" style="margin:0"><b>매출 열람 범위는 자동으로 정해져요.</b> 대표 · 관리자는 회사 전체, 본부장은 맡은 본부의 팀들, 팀장/실장과 팀원은 자기 팀 프로젝트만 봐요.<br>인사이동이 있으면 <b>서명 이미지 관리 › 결재 권한 설정</b>이나 <b>사용자 관리</b>에서 소속 팀 · 결재 권한만 바꾸면 바로 반영돼요. (매출 · 수익률은 완료된 프로젝트 기준)</div>'; }
+    var hd = page.querySelector('.card-header'); if (hd) hd.innerHTML = '<span class="card-title">직원별 매출 열람 범위</span>';
+  }
+  var rows = s53Active().map(function (u) {
+    var s = s53Scope(u), d = typeof aprUserDept === 'function' ? aprUserDept(u) : null;
+    var who = u.role === 'admin' ? '관리자' : (S53_ROLE[u.approvalRole] || '팀원');
+    var scope = s.all ? '<b style="color:var(--green)">회사 전체</b>' : s.teams.length ? '<b>' + E(s.label) + '</b>' + (s.teams.length > 1 || s.label !== s.teams[0] ? ' <span class="org-sub">(' + E(s.teams.join(', ')) + ')</span>' : '') : '<span style="color:var(--orange)">소속 팀이 없어 자기 담당 프로젝트만</span>';
+    return '<tr style="cursor:default"><td style="font-weight:600">' + E(u.name) + '</td><td>' + E(who) + '</td><td>' + (u.team ? E(u.team) : '<span style="color:var(--text3)">팀 없음</span>') + '</td><td>' + (d ? E(d.name) : '<span style="color:var(--text3)">-</span>') + '</td><td>' + scope + '</td></tr>';
+  }).join('');
+  el.innerHTML = '<div class="table-wrap"><table><thead><tr><th>이름</th><th>권한</th><th>소속 팀</th><th>본부</th><th>볼 수 있는 매출</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
 };
 
 // ════════════════════════════════════════════
