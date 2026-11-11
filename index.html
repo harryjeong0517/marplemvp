@@ -4643,7 +4643,7 @@ function renderProjectsList() {
   );
 
   // ── 연/월 필터 ──────────────────────────────────────────
-  if (filterYear)  projects = projects.filter(p => (p.startDate||'').startsWith(filterYear));
+  if (filterYear)  projects = projects.filter(p => { const d = p.startDate || p.eventStart || ''; return !d || d.startsWith(filterYear); });
   if (filterMonth) projects = projects.filter(p => {
     const d = p.startDate || '';
     return d.length >= 7 && d.slice(5,7) === filterMonth;
@@ -4668,7 +4668,8 @@ function renderProjectsList() {
 
   // ── 비관리자: 본인 팀만 ──────────────────────────────────
   if (currentUser.role !== 'admin') {
-    projects = projects.filter(p => p.team === currentUser.team);
+    const _acc = new Set((typeof getAccessibleProjects === 'function' ? getAccessibleProjects() : []).map(p => p.id));
+    projects = projects.filter(p => _acc.has(p.id));
   }
 
   // ── 정렬 ───────────────────────────────────────────────
@@ -7698,7 +7699,7 @@ function showUploadPreview(data) {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
       <div class="form-group"><label class="form-label">팀</label>
         <select class="form-select" id="up-team" onchange="upUpdateDept()">
-          ${DB.teams.map(t=>`<option>${t.name}</option>`).join('')}
+          ${DB.teams.map(t=>`<option ${t.name===(currentUser&&currentUser.team)?'selected':''}>${t.name}</option>`).join('')}
         </select></div>
       <div class="form-group"><label class="form-label">본부</label>
         <input class="form-input" id="up-dept" readonly style="background:var(--bg4);"></div>
@@ -19987,7 +19988,8 @@ renderUsersPage = function () {
 //  기본 = 자동: 대표 · 관리자 → 회사 전체 / 본부장 → 맡은 본부 / 팀장·팀원 → 자기 팀
 //  대표 · 관리자가 사람마다 바꿀 수 있음: users[].salesScope = { mode: 'all'|'depts'|'teams'|'self', ids: [...] }
 //  · 본부 선택 = 그 본부에 속한 팀 전부 (팀이 새로 생기거나 옮겨도 따라감)
-//  · 어느 범위든 본인이 담당자인 프로젝트는 항상 보임
+//  · 어느 범위든 본인이 담당자이거나 만든 프로젝트는 항상 보임
+//  · 팀이 없는 사람(팀 삭제 · 인사이동 중)은 소속 본부 기준
 // ════════════════════════════════════════════
 var SC_MODES = { auto: '자동 (직급 · 소속 기준)', all: '회사 전체', depts: '본부 선택', teams: '팀 선택', self: '본인 담당만' };
 function scTeamDept(name) { var t = (DB.teams || []).find(function (x) { return x.name === name; }); return t ? t.deptId : null; }
@@ -19996,8 +19998,12 @@ function scAuto(u) {
   if (u.role === 'admin' || u.approvalRole === 'ceo') return { all: true, teams: [], label: '회사 전체' };
   if (u.approvalRole === 'deptHead') {
     var d = (DB.depts || []).find(function (x) { return x.headId === u.id; }) || (DB.depts || []).find(function (x) { return x.id === (scTeamDept(u.team) || u.deptId); });
-    if (d) return { all: false, teams: (DB.teams || []).filter(function (t) { return t.deptId === d.id; }).map(function (t) { return t.name; }), label: d.name };
+    if (d) return { all: false, teams: (DB.teams || []).filter(function (t) { return t.deptId === d.id; }).map(function (t) { return t.name; }), depts: [d.name], label: d.name };
   }
+  if (u.team && (DB.teams || []).some(function (t) { return t.name === u.team; })) return { all: false, teams: [u.team], label: u.team };
+  // 팀이 없거나(팀 삭제 · 인사이동 중) 목록에 없는 팀 → 소속 본부 기준
+  var dd = (DB.depts || []).find(function (x) { return x.id === (scTeamDept(u.team) || u.deptId); });
+  if (dd) return { all: false, teams: (DB.teams || []).filter(function (t) { return t.deptId === dd.id; }).map(function (t) { return t.name; }).concat(u.team ? [u.team] : []), depts: [dd.name], label: dd.name };
   return { all: false, teams: [u.team].filter(Boolean), label: u.team || '본인 담당만' };
 }
 function scopeOf(u) {
@@ -20008,7 +20014,7 @@ function scopeOf(u) {
   if (m === 'self') return { all: false, teams: [], label: '본인 담당만', custom: true };
   if (m === 'depts') {
     var ds = (DB.depts || []).filter(function (d) { return ids.indexOf(d.id) >= 0; });
-    return { all: false, teams: (DB.teams || []).filter(function (t) { return ids.indexOf(t.deptId) >= 0; }).map(function (t) { return t.name; }), label: ds.map(function (d) { return d.name; }).join(', ') || '고른 본부 없음', custom: true };
+    return { all: false, teams: (DB.teams || []).filter(function (t) { return ids.indexOf(t.deptId) >= 0; }).map(function (t) { return t.name; }), depts: ds.map(function (d) { return d.name; }), label: ds.map(function (d) { return d.name; }).join(', ') || '고른 본부 없음', custom: true };
   }
   if (m === 'teams') {
     var ts = (DB.teams || []).filter(function (t) { return ids.indexOf(t.id) >= 0; }).map(function (t) { return t.name; });
@@ -20019,7 +20025,9 @@ function scopeOf(u) {
 function scopeProjects(u) {
   var ps = (DB.projects || []).filter(Boolean); if (!u) return [];
   var s = scopeOf(u); if (s.all) return ps;
-  return ps.filter(function (p) { return s.teams.indexOf(p.team) >= 0 || p.manager === u.name || p.manager === u.id; });
+  var dn = s.depts || [];
+  // 본인이 만든 프로젝트 · 담당 프로젝트는 범위와 상관없이 항상
+  return ps.filter(function (p) { return s.teams.indexOf(p.team) >= 0 || (dn.length && dn.indexOf(p.dept) >= 0) || p.manager === u.name || p.manager === u.id || (p.createdBy && p.createdBy === u.id); });
 }
 
 // ════════════════════════════════════════════
@@ -20499,6 +20507,81 @@ s53SetLead = (function (orig) {
     return r;
   };
 })(s53SetLead);
+
+// ── 새 프로젝트 만들 때 기본값: 담당자 = 나, 팀 = 내 팀 (전에는 목록 첫 팀이 들어가서 만든 사람에게 안 보이는 일이 있었음) ──
+openNewProjectModal = (function (orig) {
+  return function () {
+    var r = orig.apply(this, arguments);
+    try {
+      var m = document.getElementById('np-manager'), t = document.getElementById('np-team');
+      if (m && currentUser && [].some.call(m.options, function (o) { return o.value === currentUser.name; })) m.value = currentUser.name;
+      var myTeam = currentUser && currentUser.team && s53Team(currentUser.team) ? currentUser.team : '';
+      if (!myTeam && currentUser) { var dd = aprUserDept(currentUser), ft = dd && (DB.teams || []).find(function (x) { return x.deptId === dd.id; }); if (ft) myTeam = ft.name; }
+      if (t && myTeam && [].some.call(t.options, function (o) { return o.value === myTeam; })) { t.value = myTeam; if (typeof updateDeptFromTeam === 'function') updateDeptFromTeam(); }
+    } catch (e) {}
+    return r;
+  };
+})(openNewProjectModal);
+
+// ════ 협업 보드에서 프로젝트 만들기 (보드 카드 ↔ 프로젝트는 pjsync 가 이어 줌) ════
+function s53MyTeam(u) {
+  u = u || currentUser; if (!u) return '';
+  if (u.team && s53Team(u.team)) return u.team;
+  var dd = aprUserDept(u), ft = dd && (DB.teams || []).find(function (x) { return x.deptId === dd.id; });
+  return ft ? ft.name : '';
+}
+function s53MakeProject(o) {
+  var mgr = s53User(o.managerId) || currentUser, team = s53MyTeam(mgr) || s53MyTeam(currentUser);
+  var p = { id: genId(), name: o.name || '새 프로젝트', client: o.client || '', manager: mgr ? mgr.name : '', team: team, dept: team ? getDeptByTeamName(team) : '',
+    startDate: o.start || '', endDate: o.end || '', status: o.status || '진행중', poNumber: '', eventStart: '', eventEnd: '', createdBy: currentUser.id,
+    items: [], payments: [], groupPayments: [], cardExpenses: [], comments: [], taxInvoices: [] };
+  DB.projects.push(p);
+  if (typeof ensureProjectCodes === 'function') ensureProjectCodes();
+  return p;
+}
+// 보드 상단 [+ 새 프로젝트]: 프로젝트를 만들고 보드 카드를 바로 열어 이름 입력
+function bdNewProject() {
+  var ws = bdWeekStart(bdToday());
+  var p = s53MakeProject({ name: '새 프로젝트', start: bdISO(bdToday()), end: bdISO(bdAddDays(ws, 4)) });
+  if (typeof bdSyncProjects === 'function') bdSyncProjects();
+  saveDB();
+  bdUI.openId = 'pj_' + p.id; renderBoardPage();
+  showToast('프로젝트를 만들었어요 (코드 ' + (p.code || '') + '). 프로젝트 탭에도 바로 보여요.');
+  setTimeout(function () { var el = document.getElementById('bdp-title'); if (el) { el.focus(); el.select(); } }, 60);
+}
+// 업무 → 프로젝트: 이 업무 이름 · 기간 · 담당자로 프로젝트를 만들고, 이 업무는 그 프로젝트의 하위 업무로
+function bdTaskToProject(id) {
+  var t = bdTask(id); if (!t) return;
+  if (t.kind === 'project') { showToast('이미 프로젝트 카드예요'); return; }
+  var p = s53MakeProject({ name: t.title, start: t.start, end: t.due, managerId: (t.assignees || [])[0], status: t.status === 'done' ? '완료' : t.status === 'todo' ? '대기' : '진행중' });
+  t.projectId = p.id; t.updatedAt = bdNow(); bdLog(t, '이 업무로 프로젝트 "' + p.name + '" 생성');
+  if (typeof bdSyncProjects === 'function') bdSyncProjects();
+  saveDB(); renderBoardPage();
+  showToast('"' + p.name + '" 프로젝트를 만들었어요 (코드 ' + (p.code || '') + '). 프로젝트 탭에도 생겼어요.');
+}
+bdSet = (function (orig) {
+  return function (id, k, v) { if (k === 'projectId' && v === '__new') { bdTaskToProject(id); return; } return orig.apply(this, arguments); };
+})(bdSet);
+renderBoardPage = (function (orig) {
+  return function () {
+    var r = orig.apply(this, arguments);
+    try {
+      var nb = document.querySelector('#board-root .bd-top button[onclick="bdNewTask()"]');
+      if (nb && !document.getElementById('bd-newpj')) nb.insertAdjacentHTML('beforebegin', '<button class="btn btn-secondary btn-sm" id="bd-newpj" onclick="bdNewProject()" title="프로젝트 탭에도 같이 생겨요">+ 새 프로젝트</button>');
+    } catch (e) {}
+    return r;
+  };
+})(renderBoardPage);
+bdRenderPanel = (function (orig) {
+  return function () {
+    var r = orig.apply(this, arguments);
+    try {
+      var t = bdTask(bdUI.openId), sel = document.querySelector('#bd-panel select[onchange*="projectId"]');
+      if (t && sel && t.kind !== 'project' && !sel.querySelector('option[value="__new"]')) sel.insertAdjacentHTML('beforeend', '<option value="__new">＋ 이 업무로 새 프로젝트 만들기</option>');
+    } catch (e) {}
+    return r;
+  };
+})(bdRenderPanel);
 
 // ════════════════════════════════════════════
 //  메뉴 리뉴얼 — 9개 메뉴 + 페이지 위 탭 + 결재함 + Ctrl K

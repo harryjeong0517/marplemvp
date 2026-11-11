@@ -5022,7 +5022,8 @@ if (/^#leave/.test(location.hash)) location.hash = 'home';
 //  기본 = 자동: 대표 · 관리자 → 회사 전체 / 본부장 → 맡은 본부 / 팀장·팀원 → 자기 팀
 //  대표 · 관리자가 사람마다 바꿀 수 있음: users[].salesScope = { mode: 'all'|'depts'|'teams'|'self', ids: [...] }
 //  · 본부 선택 = 그 본부에 속한 팀 전부 (팀이 새로 생기거나 옮겨도 따라감)
-//  · 어느 범위든 본인이 담당자인 프로젝트는 항상 보임
+//  · 어느 범위든 본인이 담당자이거나 만든 프로젝트는 항상 보임
+//  · 팀이 없는 사람(팀 삭제 · 인사이동 중)은 소속 본부 기준
 // ════════════════════════════════════════════
 var SC_MODES = { auto: '자동 (직급 · 소속 기준)', all: '회사 전체', depts: '본부 선택', teams: '팀 선택', self: '본인 담당만' };
 function scTeamDept(name) { var t = (DB.teams || []).find(function (x) { return x.name === name; }); return t ? t.deptId : null; }
@@ -5031,8 +5032,12 @@ function scAuto(u) {
   if (u.role === 'admin' || u.approvalRole === 'ceo') return { all: true, teams: [], label: '회사 전체' };
   if (u.approvalRole === 'deptHead') {
     var d = (DB.depts || []).find(function (x) { return x.headId === u.id; }) || (DB.depts || []).find(function (x) { return x.id === (scTeamDept(u.team) || u.deptId); });
-    if (d) return { all: false, teams: (DB.teams || []).filter(function (t) { return t.deptId === d.id; }).map(function (t) { return t.name; }), label: d.name };
+    if (d) return { all: false, teams: (DB.teams || []).filter(function (t) { return t.deptId === d.id; }).map(function (t) { return t.name; }), depts: [d.name], label: d.name };
   }
+  if (u.team && (DB.teams || []).some(function (t) { return t.name === u.team; })) return { all: false, teams: [u.team], label: u.team };
+  // 팀이 없거나(팀 삭제 · 인사이동 중) 목록에 없는 팀 → 소속 본부 기준
+  var dd = (DB.depts || []).find(function (x) { return x.id === (scTeamDept(u.team) || u.deptId); });
+  if (dd) return { all: false, teams: (DB.teams || []).filter(function (t) { return t.deptId === dd.id; }).map(function (t) { return t.name; }).concat(u.team ? [u.team] : []), depts: [dd.name], label: dd.name };
   return { all: false, teams: [u.team].filter(Boolean), label: u.team || '본인 담당만' };
 }
 function scopeOf(u) {
@@ -5043,7 +5048,7 @@ function scopeOf(u) {
   if (m === 'self') return { all: false, teams: [], label: '본인 담당만', custom: true };
   if (m === 'depts') {
     var ds = (DB.depts || []).filter(function (d) { return ids.indexOf(d.id) >= 0; });
-    return { all: false, teams: (DB.teams || []).filter(function (t) { return ids.indexOf(t.deptId) >= 0; }).map(function (t) { return t.name; }), label: ds.map(function (d) { return d.name; }).join(', ') || '고른 본부 없음', custom: true };
+    return { all: false, teams: (DB.teams || []).filter(function (t) { return ids.indexOf(t.deptId) >= 0; }).map(function (t) { return t.name; }), depts: ds.map(function (d) { return d.name; }), label: ds.map(function (d) { return d.name; }).join(', ') || '고른 본부 없음', custom: true };
   }
   if (m === 'teams') {
     var ts = (DB.teams || []).filter(function (t) { return ids.indexOf(t.id) >= 0; }).map(function (t) { return t.name; });
@@ -5054,7 +5059,9 @@ function scopeOf(u) {
 function scopeProjects(u) {
   var ps = (DB.projects || []).filter(Boolean); if (!u) return [];
   var s = scopeOf(u); if (s.all) return ps;
-  return ps.filter(function (p) { return s.teams.indexOf(p.team) >= 0 || p.manager === u.name || p.manager === u.id; });
+  var dn = s.depts || [];
+  // 본인이 만든 프로젝트 · 담당 프로젝트는 범위와 상관없이 항상
+  return ps.filter(function (p) { return s.teams.indexOf(p.team) >= 0 || (dn.length && dn.indexOf(p.dept) >= 0) || p.manager === u.name || p.manager === u.id || (p.createdBy && p.createdBy === u.id); });
 }
 
 // ════════════════════════════════════════════
@@ -5117,7 +5124,7 @@ function aprLblText(html, L) {
 
 // ── 53차: 프로젝트 · 매출 열람 범위를 PC와 똑같이 (설정 › 매출 열람 권한) ──
 projects = function () { return me ? scopeProjects(me) : []; };
-canSeeMoney = function (p) { if (!me) return false; var s = scopeOf(me); return s.all || s.teams.indexOf(p.team) >= 0 || p.manager === me.name || p.manager === me.id; };
+canSeeMoney = function (p) { if (!me) return false; var s = scopeOf(me); return s.all || s.teams.indexOf(p.team) >= 0 || (s.depts || []).indexOf(p.dept) >= 0 || p.manager === me.name || p.manager === me.id || (p.createdBy && p.createdBy === me.id); };
 // ── 결재 단계 이름: 본부마다 (PC 설정 › 본부 수정) ──
 aprLblWrap('mpLabel', function (pay) { var f = pay && pay.approval ? aprFindPay(pay.approval) : null; return [pay, f ? f.p : null]; });
 aprLblWrap('mpRow', function (x) { return x ? [x.pay, x.p] : null; });
