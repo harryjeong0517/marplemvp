@@ -20641,6 +20641,67 @@ renderTeamsPage = function () {
 setTimeout(function () { try { if (s53CanEditScope() && s53FixProjectDepts()) saveDB(); } catch (e) {} }, 6000);
 
 // ════════════════════════════════════════════
+//  54차 — Figma "페이먼트 프로그램" 디자인 수정 코멘트 반영 (마크업 이동이 필요한 것만 여기서)
+//  · 홈 상단 배너를 가로 전체로 (#10)
+//  · 11월 실적 그래프를 카드 아래 · 왼쪽부터 (#11 #31)
+//  · KPI 카드: 금액 + "원"을 한 줄 아래 정렬, 수익률 기준 문구는 제목 옆 회색 (#22~#26 #46)
+//  · 안 읽은 알림 카드 → 팝업이 카드 바로 아래 (#21)
+//  · 검색 팝업 Esc → X 버튼 (#9)
+// ════════════════════════════════════════════
+if (typeof renderHome === 'function') renderHome = (function (orig) {
+  return function () {
+    var r = orig.apply(this, arguments);
+    try {
+      var root = document.getElementById('home-root'), hero = root && root.querySelector('.hm-grid .hm-hero'), grid = root && root.querySelector('.hm-grid');
+      if (hero && grid) root.insertBefore(hero, grid);
+      document.querySelectorAll('#home-root .hm-ring').forEach(function (ring) {
+        var sp = ring.querySelector('.hm-spark'); if (!sp) return;
+        sp.classList.add('s54'); ring.insertAdjacentElement('afterend', sp);
+        var lb = document.createElement('div'); lb.className = 'hm-spark-lb';
+        lb.innerHTML = [].map.call(sp.children, function (i) { var t = String(i.title || '').slice(5, 7); return '<span>' + (t ? (+t) + '월' : '') + '</span>'; }).join('');
+        sp.insertAdjacentElement('afterend', lb);
+      });
+    } catch (e) { console.warn('54차 홈', e); }
+    return r;
+  };
+})(renderHome);
+if (typeof renderDashboard === 'function') renderDashboard = (function (orig) {
+  return function () {
+    var r = orig.apply(this, arguments);
+    try {
+      document.querySelectorAll('#dash-stats .stat-card').forEach(function (c) {
+        var v = c.querySelector('.stat-value'), ch = c.querySelector('.stat-change'), lb = c.querySelector('.stat-label'); if (!v || !ch) return;
+        var t = ch.textContent.trim();
+        if (t === '원') { v.insertAdjacentHTML('beforeend', '<span class="s54-unit">원</span>'); ch.remove(); }
+        else if (t && lb) { lb.insertAdjacentHTML('beforeend', ' <span class="s54-note">(' + qtEsc(t) + ')</span>'); ch.remove(); }
+      });
+    } catch (e) { console.warn('54차 KPI', e); }
+    return r;
+  };
+})(renderDashboard);
+if (typeof openNotifications === 'function') openNotifications = (function (orig) {
+  return function () {
+    var ev = window.event, chip = ev && ev.target && ev.target.closest ? ev.target.closest('.hm-chip') : null;
+    var r = orig.apply(this, arguments), d = document.getElementById('notif-drawer');
+    if (d) {
+      if (chip) {
+        var b = chip.getBoundingClientRect(), w = d.offsetWidth || 320;
+        d.classList.add('s54-under'); d.style.top = Math.round(b.bottom + 8) + 'px'; d.style.left = Math.round(Math.max(12, Math.min(b.left, window.innerWidth - w - 12))) + 'px';
+      } else { d.classList.remove('s54-under'); d.style.top = ''; d.style.left = '12px'; }
+    }
+    return r;
+  };
+})(openNotifications);
+if (typeof rnPalOpen === 'function') rnPalOpen = (function (orig) {
+  return function () {
+    var r = orig.apply(this, arguments);
+    try { var k = document.querySelector('#rn-pal .rn-pal-in kbd'); if (k) k.outerHTML = '<button class="rn-pal-x" title="닫기 (Esc)" onclick="rnPalClose()"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg></button>'; } catch (e) {}
+    return r;
+  };
+})(rnPalOpen);
+
+(function(){var st=document.createElement("style");st.id="s54-style";st.textContent="/* ════ 54차 — Figma \"페이먼트 프로그램\" 디자인 수정 코멘트 반영 ════ */\n:root{--side:#000;--pt-blue:#009BDF}\n/* 1. 로그인 (#51 #49 #48) */\n#login-page{background:#000}\n.login-card label{color:#000}\n.btn-login{background:#009BDF}\n/* 2. 사이드바 (#7 #8 #44 #45 #43 #50 #32) */\n.sidebar{background:#000}\n.sidebar-logo small.mf-sub{letter-spacing:.45em}\n.nav-item,.rn-item{font-size:15px}\n.rn-cat-h{font-size:16px;font-weight:400;color:rgba(255,255,255,.40);letter-spacing:0}\n.rn-cat-h i{font-size:18px;line-height:1;color:rgba(255,255,255,.55)}\n#rn-nav-me .rn-lb{font-weight:600}\n.sidebar-footer{background:#000;border:1px solid #000}\n.sidebar-footer .sb-pill{border-bottom-color:#000}\n/* 3. 홈 상단 배너 (#10) — 가로 전체 · 그라데이션 */\n#home-root>.hm-hero{width:100%;margin-bottom:16px;box-sizing:border-box}\n.hm-hero{background:linear-gradient(120deg,#111111 0%,#16233d 55%,#009BDF 100%)}\n/* 카드 제목 18px (#12 #13 #14 #16 #17) · 카드 우측 링크 (#37 #38) */\n.hm-h{font-size:18px}\n.hm-h a{font-size:14px;font-weight:600}\n#page-dashboard .card-title{font-size:18px}\n/* 4. 11월 실적 그래프 (#11 #31) — 아래로 · 왼쪽부터 */\n.hm-spark.s54{height:44px;margin:14px 0 0;justify-content:flex-start;gap:6px}\n.hm-spark.s54 i{flex:0 0 calc((100% - 30px) / 6)}\n.hm-spark-lb{display:flex;gap:6px;margin-top:4px}\n.hm-spark-lb span{flex:0 0 calc((100% - 30px) / 6);font-size:11px;color:var(--text3,#8a93a3);text-align:center}\n/* 5. 다가오는 행사 (#33 #34 #35 #36) */\n.hm-ev small{font-size:15px}\n.hm-ev b{font-size:16px}\n.hm-ev .m{font-size:13px}\n.hm-ev .dd{font-weight:400;font-size:13px}\n/* 6. KPI 카드 (#20 #25 #24 #22 #46 #23 #26) */\n#dash-stats .stat-card{display:flex;flex-direction:column}\n#dash-stats .stat-label{font-size:15px;color:#111;font-weight:600}\n#dash-stats .stat-label .s54-note{color:#999;font-weight:400}\n#dash-stats .stat-value{margin-top:auto;padding-top:14px;display:flex;align-items:baseline;gap:3px}\n#dash-stats .stat-value .s54-unit{font-size:15px;font-weight:600;color:var(--text2,#5b6474)}\n#dash-stats .stat-card:first-child .stat-value{color:#009BDF}\n/* 7. 오늘 일정 · 할 일 (#29 #30 #39) */\n.hm-tl{grid-template-columns:48px 10px 1fr auto}\n.hm-tl time{font-size:13px}\n.hm-tl b{font-size:14px}\n.hm-tl em{font-size:13px}\n/* 8. 팀별 매출 현황 (#27 #28) */\n#dash-team-chart .chart-bar-label,#dash-team-chart .chart-bar-val{font-size:14px}\n/* 9. 최근 프로젝트 (#18 #19 #40 #42) */\n#dash-recent-projects>div>div:first-child>div:first-child{font-size:14px!important}\n#dash-recent-projects>div>div:first-child>div:nth-child(2){font-size:13px!important}\n#dash-recent-projects .badge{font-size:13px}\n#dash-recent-projects>div>div:last-child>div{font-size:13px!important}\n/* 10. 검색 팝업 X (#9) */\n.rn-pal-x{border:0;background:none;width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#8a93a3;flex-shrink:0}\n.rn-pal-x:hover{background:#f1f3f6;color:#16191f}\n/* 안 읽은 알림: 카드 아래 팝업 (#21) */\n#notif-drawer.s54-under{bottom:auto!important}\n";document.head.appendChild(st);})();
+// ════════════════════════════════════════════
 //  메뉴 리뉴얼 — 9개 메뉴 + 페이지 위 탭 + 결재함 + Ctrl K
 //  (기존 메뉴·화면·권한은 그대로 두고 들어가는 길만 정리)
 // ════════════════════════════════════════════
