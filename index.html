@@ -18117,15 +18117,15 @@ function renderHome() {
     '<div class="hm-chips">' + chip('내 결재 차례', inbox.length + '건', "navigate(typeof rnOpenGroup==='function'?'inbox':'payments')", inbox.length) + chip('오늘 할 일', tasks.length + '개', "navigate('board')", tasks.some(function (x) { return x.due < hmISO(); })) + chip('이번 주 행사', wk.length + '건', "navigate('mcal')") + chip('안 읽은 알림', (DB.notifications || []).filter(function (x) { return ntOk(x) && x.toUserId === me.id && !x.read; }).length, "openNotifications()") + '</div>' +
     '<div class="hm-qk"><button onclick="openNewProjectModal()">＋ 프로젝트</button><button onclick="navigate(\'payments\')">💳 페이먼트</button><button onclick="' + (todayEv ? 'openCardModal(\'' + todayEv.id + '\')' : 'navigate(\'projects\');showToast(\'프로젝트를 열고 [+ 카드/퀵 지출]에서 영수증을 올려 주세요\')') + '">🧾 영수증</button></div></div>';
   // 다가오는 행사
-  // 배너(#111 → #16233d → #009BDF)와 같은 계열: 포인트 블루 · 네이비 · 딥 블루 · 슬레이트
-  var grads = ['linear-gradient(135deg,#009BDF 0%,#0072b1 100%)', 'linear-gradient(135deg,#1f3358 0%,#0f1a2e 100%)', 'linear-gradient(135deg,#0b63a8 0%,#0a3d6b 100%)', 'linear-gradient(135deg,#4b5a70 0%,#262f3d 100%)'];
+  // 다가오는 행사 카드: 노랑 · 연두 · 보라 · 주황
+  var grads = ['linear-gradient(135deg,#F5B82E 0%,#DB8A05 100%)', 'linear-gradient(135deg,#8CC63F 0%,#4F8A1B 100%)', 'linear-gradient(135deg,#9B6BF2 0%,#5B2BB5 100%)', 'linear-gradient(135deg,#FF7E54 0%,#DB4A2A 100%)'];
   var evc = up.slice(0, 4).map(function (p, i) {
     var subs = (typeof bdTasks === 'function' ? bdTasks() : []).filter(function (t) { return t.projectId === p.id && t.kind !== 'project' && !t.archived; }), done = subs.filter(function (t) { return t.status === 'done'; }).length;
     var pend = (p.payments || []).concat(p.groupPayments || []).filter(function (x) { return x.approval && !x.draft && x.submitted && getApprovalStep(x.approval) !== 'done' && !isRejected(x.approval); }).length;
     var fsn = typeof fsCount === 'function' ? fsCount(p) : 0, d = mrDate(p.eventStart);
     var meta = [subs.length ? '업무 ' + done + '/' + subs.length : '', pend ? '결재 대기 ' + pend : '', fsn ? '운영시트 ' + fsn : ''].filter(Boolean).join(' · ') || E(p.manager || '');
     var pc = subs.length ? Math.round(done / subs.length * 100) : 0;
-    return '<button class="hm-ev" style="background:' + grads[i % grads.length] + '" onclick="openProjectDetail(\'' + p.id + '\')"><span class="dd">' + hmDday(p.eventStart) + '</span><small>' + (d ? (d.getMonth() + 1) + '/' + d.getDate() + ' (' + days[d.getDay()] + ')' : '') + (p.client ? ' · ' + E(p.client) : '') + '</small><b>' + E(p.name) + '</b><span class="m">' + meta + '</span><div class="bar"><i style="width:' + pc + '%"></i></div></button>';
+    return '<button class="hm-ev" style="background:' + ((typeof hmBrandGrad === 'function' && hmBrandGrad(p.client)) || grads[i % grads.length]) + '" onclick="openProjectDetail(\'' + p.id + '\')"><span class="dd">' + hmDday(p.eventStart) + '</span><small>' + (d ? (d.getMonth() + 1) + '/' + d.getDate() + ' (' + days[d.getDay()] + ')' : '') + (p.client ? ' · ' + E(p.client) : '') + '</small><b>' + E(p.name) + '</b><span class="m">' + meta + '</span><div class="bar"><i style="width:' + pc + '%"></i></div></button>';
   }).join('') || '<div class="hm-none">예정된 행사가 없어요 — 프로젝트에 행사일을 넣으면 여기에 나와요</div>';
   // 오늘
   var tl = hmToday().slice(0, 7).map(function (x) { return '<button class="hm-tl" onclick="' + x.open.replace(/"/g, '&quot;') + '"><time>' + (x.time || '오늘') + '</time><span class="dot" style="background:' + x.c + '"></span><div><b>' + E(x.title) + '</b><small>' + E(x.sub || '') + '</small></div><em style="background:' + x.c + '1a;color:' + x.c + '">' + x.tag + '</em></button>'; }).join('') || '<div class="hm-none">오늘 잡힌 일정 · 마감이 없어요 ☕</div>';
@@ -20708,6 +20708,45 @@ if (typeof rnPalOpen === 'function') rnPalOpen = (function (orig) {
     return r;
   };
 })(rnPalOpen);
+
+// ════ 56차 — 다가오는 행사 카드: 고객사 브랜드 컬러 ════
+// 거래처 정보에 브랜드 컬러를 넣으면 그 색, 없으면 아래 기본 목록, 그래도 없으면 기존 색(노랑 · 연두 · 보라 · 주황) 순서
+var HM_BRANDS = [
+  { re: /agilent|애질런트|어질런트/i, c: ['#0085D5', '#00426A'] },                 // Agilent Blue
+  { re: /(^|[\s()㈜])sk(?![a-z])|에스케이/i, c: ['#F47725', '#EA002C'] },            // SK Orange → SK Red
+  { re: /megazone|메가존/i, c: ['#414AFF', '#2228B0'] },                             // 메가존클라우드
+  { re: /cloudflare|클라우드플레어/i, c: ['#F6821F', '#D9590B'] }                     // Cloudflare Tangerine
+];
+function hmShade(hex, k) { var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim()); if (!m) return null; var n = parseInt(m[1], 16), f = function (v) { return Math.max(0, Math.min(255, Math.round(v * k))); }; return '#' + [n >> 16, (n >> 8) & 255, n & 255].map(function (v) { return ('0' + f(v).toString(16)).slice(-2); }).join(''); }
+function hmBrandGrad(client) {
+  if (!client) return '';
+  var r = typeof clRec === 'function' ? clRec(client) : null, own = r && r.brandColor;
+  if (own && /^#[0-9a-f]{6}$/i.test(own)) return 'linear-gradient(135deg,' + own + ' 0%,' + hmShade(own, 0.62) + ' 100%)';
+  var nm = String(client) + ' ' + ((r && (r.aliases || []).join(' ')) || ''), b = HM_BRANDS.find(function (x) { return x.re.test(nm); });
+  return b ? 'linear-gradient(135deg,' + b.c[0] + ' 0%,' + b.c[1] + ' 100%)' : '';
+}
+// 거래처 정보 창에 "브랜드 컬러" 칸
+if (typeof clEdit === 'function') clEdit = (function (orig) {
+  return function (name) {
+    var r = orig.apply(this, arguments);
+    try {
+      var rec = clRec(name) || {}, vip = document.getElementById('cl-vip'), cur = rec.brandColor || '';
+      var g = hmBrandGrad(name), auto = !cur && g ? (g.match(/#[0-9A-Fa-f]{6}/) || [''])[0] : '';
+      if (vip && !document.getElementById('cl-brand')) vip.closest('label').insertAdjacentHTML('beforebegin', '<div class="form-group"><label class="form-label">브랜드 컬러 <span style="font-weight:500;color:var(--text3)">— 홈 "다가오는 행사" 카드 색' + (auto ? ' (지금 기본값 ' + auto + ')' : '') + '</span></label>' +
+        '<div style="display:flex;gap:8px;align-items:center"><input type="color" id="cl-brand-pick" value="' + (cur || auto || '#009BDF') + '" oninput="document.getElementById(\'cl-brand\').value=this.value.toUpperCase()" style="width:44px;height:36px;padding:2px;border:1px solid var(--border);border-radius:8px;background:#fff">' +
+        '<input class="form-input" id="cl-brand" value="' + qtEsc(cur) + '" placeholder="' + (auto ? auto + ' (기본)' : '비우면 기본 색') + '" style="max-width:160px"><button type="button" class="btn btn-secondary btn-xs" onclick="document.getElementById(\'cl-brand\').value=\'\'">기본으로</button></div></div>');
+    } catch (e) {}
+    return r;
+  };
+})(clEdit);
+if (typeof clEditSave === 'function') clEditSave = (function (orig) {
+  return function (name) {
+    var el = document.getElementById('cl-brand'), v = el ? el.value.trim() : null;
+    if (v && !/^#?[0-9a-f]{6}$/i.test(v)) { showToast('브랜드 컬러는 #0085D5 처럼 6자리 색상값으로 넣어 주세요', 'error'); return; }
+    if (el) { var c = clEnsure(name); if (v) c.brandColor = (v[0] === '#' ? v : '#' + v).toUpperCase(); else delete c.brandColor; }
+    return orig.apply(this, arguments);
+  };
+})(clEditSave);
 
 (function(){var st=document.createElement("style");st.id="s54-style";st.textContent="/* ════ 54차 — Figma \"페이먼트 프로그램\" 디자인 수정 코멘트 반영 ════ */\n:root{--side:#000;--pt-blue:#009BDF}\n/* 1. 로그인 (#51 #49 #48) */\n#login-page{background:#000}\n.login-card label{color:#000}\n.btn-login{background:#009BDF}\n/* 2. 사이드바 (#7 #8 #44 #45 #43 #50 #32) */\n.sidebar{background:#000}\n.sidebar-logo small.mf-sub{letter-spacing:.45em}\n.nav-item,.rn-item{font-size:15px}\n.rn-cat-h{font-size:16px;font-weight:400;color:rgba(255,255,255,.40);letter-spacing:0}\n.rn-cat-h i{font-size:18px;line-height:1;color:rgba(255,255,255,.55)}\n#rn-nav-me .rn-lb{font-weight:600}\n.sidebar-footer{background:#000;border:1px solid #000}\n.sidebar-footer .sb-pill{border-bottom-color:#000}\n/* 3. 홈 상단 배너 (#10) — 가로 전체 · 그라데이션 */\n#home-root>.hm-hero{width:100%;margin-bottom:16px;box-sizing:border-box}\n.hm-hero{background:linear-gradient(120deg,#111111 0%,#16233d 55%,#009BDF 100%)}\n/* 카드 제목 18px (#12 #13 #14 #16 #17) · 카드 우측 링크 (#37 #38) */\n.hm-h{font-size:18px}\n.hm-h a{font-size:14px;font-weight:600}\n#page-dashboard .card-title{font-size:18px}\n/* 4. 11월 실적 그래프 (#11 #31) — 아래로 · 왼쪽부터 */\n.hm-spark.s54{height:44px;margin:14px 0 0;justify-content:flex-start;gap:6px}\n.hm-spark.s54 i{flex:0 0 calc((100% - 30px) / 6)}\n.hm-spark-lb{display:flex;gap:6px;margin-top:4px}\n.hm-spark-lb span{flex:0 0 calc((100% - 30px) / 6);font-size:11px;color:var(--text3,#8a93a3);text-align:center}\n/* 5. 다가오는 행사 (#33 #34 #35 #36) */\n.hm-ev small{font-size:15px}\n.hm-ev b{font-size:16px}\n.hm-ev .m{font-size:13px}\n.hm-ev .dd{font-weight:400;font-size:13px}\n/* 6. KPI 카드 (#20 #25 #24 #22 #46 #23 #26) */\n#dash-stats .stat-card{display:flex;flex-direction:column}\n#dash-stats .stat-label{font-size:15px;color:#111;font-weight:600}\n#dash-stats .stat-label .s54-note{color:#999;font-weight:400}\n#dash-stats .stat-value{margin-top:auto;padding-top:14px;display:flex;align-items:baseline;gap:3px}\n#dash-stats .stat-value .s54-unit{font-size:15px;font-weight:600;color:var(--text2,#5b6474)}\n#dash-stats .stat-card:first-child .stat-value{color:#009BDF}\n/* 7. 오늘 일정 · 할 일 (#29 #30 #39) */\n.hm-tl{grid-template-columns:48px 10px 1fr auto}\n.hm-tl time{font-size:13px}\n.hm-tl b{font-size:14px}\n.hm-tl em{font-size:13px}\n/* 8. 팀별 매출 현황 (#27 #28) */\n#dash-team-chart .chart-bar-label,#dash-team-chart .chart-bar-val{font-size:14px}\n/* 9. 최근 프로젝트 (#18 #19 #40 #42) */\n#dash-recent-projects>div>div:first-child>div:first-child{font-size:14px!important}\n#dash-recent-projects>div>div:first-child>div:nth-child(2){font-size:13px!important}\n#dash-recent-projects .badge{font-size:13px}\n#dash-recent-projects>div>div:last-child>div{font-size:13px!important}\n/* 10. 검색 팝업 X (#9) */\n.rn-pal-x{border:0;background:none;width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#8a93a3;flex-shrink:0}\n.rn-pal-x:hover{background:#f1f3f6;color:#16191f}\n/* 안 읽은 알림: 카드 아래 팝업 (#21) */\n#notif-drawer.s54-under{bottom:auto!important}\n/* ════ 55차 — 홈 레이아웃: 배너 / 실적 · 행사 / KPI / 오늘 일정(· 결재 대기) / 팀별 매출 · 최근 프로젝트 ════ */\n#page-dashboard.active{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:stretch}\n#page-dashboard.active>*{grid-column:1/-1;margin:0!important}\n#page-dashboard #home-root,#page-dashboard #home-root .hm-grid,#page-dashboard #home-root .hm-col{display:contents}\n#page-dashboard .hm-old-h{display:none}\n#page-dashboard #home-root .hm-hero{order:1;grid-column:1/-1;margin:0}\n#page-dashboard .s55-perf{order:2;grid-column:1/2}\n#page-dashboard .s55-ev{order:3;grid-column:2/3}\n#page-dashboard #dash-stats{order:4}\n#page-dashboard .s55-today{order:5;grid-column:1/-1}\n#page-dashboard .s55-apr{order:6;grid-column:2/3}\n#page-dashboard:has(.s55-apr) .s55-today{grid-column:1/2}\n#page-dashboard .analytics-grid{order:7}\n#page-dashboard.active>.card{order:8}\n#page-dashboard .s55-ev .hm-evs{grid-template-columns:repeat(2,minmax(0,1fr))}\n@media (max-width:1100px){#page-dashboard.active{grid-template-columns:minmax(0,1fr)}#page-dashboard .s55-perf,#page-dashboard .s55-ev,#page-dashboard .s55-today,#page-dashboard .s55-apr{grid-column:1/-1}}\n";document.head.appendChild(st);})();
 // ════════════════════════════════════════════
