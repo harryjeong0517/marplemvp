@@ -18117,8 +18117,9 @@ function renderHome() {
     '<div class="hm-chips">' + chip('내 결재 차례', inbox.length + '건', "navigate(typeof rnOpenGroup==='function'?'inbox':'payments')", inbox.length) + chip('오늘 할 일', tasks.length + '개', "navigate('board')", tasks.some(function (x) { return x.due < hmISO(); })) + chip('이번 주 행사', wk.length + '건', "navigate('mcal')") + chip('안 읽은 알림', (DB.notifications || []).filter(function (x) { return ntOk(x) && x.toUserId === me.id && !x.read; }).length, "openNotifications()") + '</div>' +
     '<div class="hm-qk"><button onclick="openNewProjectModal()">＋ 프로젝트</button><button onclick="navigate(\'payments\')">💳 페이먼트</button><button onclick="' + (todayEv ? 'openCardModal(\'' + todayEv.id + '\')' : 'navigate(\'projects\');showToast(\'프로젝트를 열고 [+ 카드/퀵 지출]에서 영수증을 올려 주세요\')') + '">🧾 영수증</button></div></div>';
   // 다가오는 행사
-  var grads = ['linear-gradient(135deg,#007db8,#0b5d8a)', 'linear-gradient(135deg,#7c3aed,#4c1d95)', 'linear-gradient(135deg,#f59e0b,#b45309)', 'linear-gradient(135deg,#0ea5a4,#0f766e)'];
-  var evc = up.slice(0, 3).map(function (p, i) {
+  // 배너(#111 → #16233d → #009BDF)와 같은 계열: 포인트 블루 · 네이비 · 딥 블루 · 슬레이트
+  var grads = ['linear-gradient(135deg,#009BDF 0%,#0072b1 100%)', 'linear-gradient(135deg,#1f3358 0%,#0f1a2e 100%)', 'linear-gradient(135deg,#0b63a8 0%,#0a3d6b 100%)', 'linear-gradient(135deg,#4b5a70 0%,#262f3d 100%)'];
+  var evc = up.slice(0, 4).map(function (p, i) {
     var subs = (typeof bdTasks === 'function' ? bdTasks() : []).filter(function (t) { return t.projectId === p.id && t.kind !== 'project' && !t.archived; }), done = subs.filter(function (t) { return t.status === 'done'; }).length;
     var pend = (p.payments || []).concat(p.groupPayments || []).filter(function (x) { return x.approval && !x.draft && x.submitted && getApprovalStep(x.approval) !== 'done' && !isRejected(x.approval); }).length;
     var fsn = typeof fsCount === 'function' ? fsCount(p) : 0, d = mrDate(p.eventStart);
