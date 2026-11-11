@@ -1951,6 +1951,7 @@ tr.own-r{background:rgba(124,58,237,.03)}
 .s53-chip:disabled{cursor:default;opacity:.7}
 .s53-perm td{vertical-align:middle}
 .s53-stg{display:flex;align-items:flex-end;gap:8px}.s53-stg label{flex:1;display:flex;flex-direction:column;gap:3px}.s53-stg small{font-size:11px;color:var(--text3)}.s53-stg i{font-style:normal;color:var(--text3);padding-bottom:9px}
+.s53-orphan{border:1.5px solid #f5c26b;background:#fffaf0;margin-bottom:16px;padding:16px 20px}.s53-orphan .card-header{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-bottom:6px}
 
 /* ── 메뉴 리뉴얼 ── */
 nav .nav-section.rn-old { display: none !important; }
@@ -20173,6 +20174,7 @@ saveTeam = function () {
   if (DB.teams.some(function (x) { return x.name === name && x !== t; })) { showToast('같은 이름의 팀이 있어요', 'error'); return; }
   if (t) { t.name = name; t.deptId = deptId; } else { t = { id: genId(), name: name, deptId: deptId }; DB.teams.push(t); }
   if (oldName && oldName !== name) { DB.users.forEach(function (u) { if (u.team === oldName) u.team = name; }); (DB.projects || []).forEach(function (p) { if (p.team === oldName) p.team = name; }); }
+  (function () { var dd = s53Dept(deptId), dn = dd ? dd.name : ''; (DB.projects || []).forEach(function (p) { if (p.team === name) p.dept = dn; }); })();
   var picked = [].slice.call(document.querySelectorAll('#org-team-extra .org-ms input:checked')).map(function (i) { return i.value; });
   if (lead && picked.indexOf(lead) < 0) picked.push(lead);
   var prev = t.leadId || '';
@@ -20191,7 +20193,9 @@ saveDept = function () {
   var name = document.getElementById('dept-name-input').value.trim(), head = (document.getElementById('dept-head-input') || {}).value || '';
   if (!name) { showToast('본부명을 입력하세요', 'error'); return; }
   var d = ORG.dept ? DB.depts.find(function (x) { return x.id === ORG.dept; }) : null, notes = [];
+  var oldDept = d ? d.name : null;
   if (d) d.name = name; else { d = { id: genId(), name: name }; DB.depts.push(d); }
+  if (oldDept && oldDept !== name) (DB.projects || []).forEach(function (p) { if (p.dept === oldDept) p.dept = name; });
   var prev = d.headId || ''; d.headId = head || '';
   if (head) s53Promote(head, 'deptHead');
   if (prev && prev !== head) s53Demote(prev, notes, 'deptHead');
@@ -20325,7 +20329,7 @@ renderPermissionsPage = function () {
   var el = document.getElementById('permissions-content'); if (!el) return;
   var E = qtEsc, page = document.getElementById('page-admin-permissions'), can = s53CanEditScope();
   if (page) {
-    var intro = page.firstElementChild; if (intro && !intro.dataset.s53) { intro.dataset.s53 = '1'; intro.innerHTML = '<div class="us-note" style="margin:0"><b>기본은 자동</b>이에요 — 대표 · 관리자는 회사 전체, 본부장은 맡은 본부, 팀장/실장 · 팀원은 자기 팀. 사람마다 <b>회사 전체 / 본부 선택 / 팀 선택 / 본인 담당만</b>으로 따로 바꿀 수 있어요. 어느 범위든 본인이 담당자인 프로젝트는 항상 보여요.<br>인사이동: <b>자동</b>인 사람은 소속 팀만 바꾸면 따라가요. <b>본부 선택</b>은 그 본부에 팀이 생기거나 옮겨도 따라가고, <b>팀 선택</b>은 고른 팀 그대로예요.</div>'; }
+    var intro = page.firstElementChild; if (intro && !intro.dataset.s53) { intro.dataset.s53 = '1'; intro.innerHTML = '<div class="us-note" style="margin:0"><b>프로젝트는 전 직원이 모두 볼 수 있어요.</b> 이 설정은 <b>대시보드 · 매출 분석 · 홈 실적 카드 · 거래처 매출</b>에 보이는 매출 범위예요.<br><b>기본은 자동</b>이에요 — 대표 · 관리자는 회사 전체, 본부장은 맡은 본부, 팀장/실장 · 팀원은 자기 팀. 사람마다 <b>회사 전체 / 본부 선택 / 팀 선택 / 본인 담당만</b>으로 따로 바꿀 수 있어요. 어느 범위든 본인이 담당자이거나 만든 프로젝트 매출은 항상 포함돼요.<br>인사이동: <b>자동</b>인 사람은 소속 팀만 바꾸면 따라가요. <b>본부 선택</b>은 그 본부에 팀이 생기거나 옮겨도 따라가고, <b>팀 선택</b>은 고른 팀 그대로예요.</div>'; }
     var hd = page.querySelector('.card-header'); if (hd) hd.innerHTML = '<span class="card-title">직원별 매출 열람 범위</span>' + (can ? '<button class="btn btn-secondary btn-sm" onclick="s53ScopeResetAll()">모두 자동으로 되돌리기</button>' : '');
   }
   var chips = function (u) {
@@ -20338,10 +20342,10 @@ renderPermissionsPage = function () {
     var s = scopeOf(u), d = aprUserDept(u), who = u.approvalRole === 'ceo' ? '대표' : u.role === 'admin' ? '관리자' : (S53_ROLE[u.approvalRole] || '팀원');
     var mode = (u.salesScope && u.salesScope.mode) || 'auto', ceo = u.approvalRole === 'ceo';
     var sel = ceo ? '<span class="org-sub">대표는 항상 회사 전체</span>' : '<select class="form-select s53-sel s53-scope' + (mode !== 'auto' ? ' on' : '') + '"' + (can ? '' : ' disabled') + ' onchange="s53ScopeMode(\'' + u.id + '\',this.value)">' + Object.keys(SC_MODES).map(function (k) { return '<option value="' + k + '"' + (k === mode ? ' selected' : '') + '>' + SC_MODES[k] + '</option>'; }).join('') + '</select>';
-    var res = s.all ? '<b style="color:var(--green)">회사 전체</b>' : s.teams.length ? '<b>' + E(s.label) + '</b>' + (s.teams.length > 1 || s.label !== s.teams[0] ? ' <span class="org-sub">(' + E(s.teams.join(', ')) + ')</span>' : '') : '<span style="color:var(--orange)">본인 담당 프로젝트만</span>';
+    var res = s.all ? '<b style="color:var(--green)">회사 전체</b>' : s.teams.length ? '<b>' + E(s.label) + '</b>' + (s.teams.length > 1 || s.label !== s.teams[0] ? ' <span class="org-sub">(' + E(s.teams.join(', ')) + ')</span>' : '') : '<span style="color:var(--orange)">본인 담당 · 작성 프로젝트만</span>';
     return '<tr style="cursor:default"><td style="font-weight:600;white-space:nowrap">' + E(u.name) + '</td><td>' + E(who) + '</td><td>' + (u.team ? E(u.team) : '<span style="color:var(--text3)">팀 없음</span>') + (d ? ' <span class="org-sub">' + E(d.name) + '</span>' : '') + '</td><td>' + sel + '</td><td>' + res + chips(u) + '</td></tr>';
   }).join('');
-  el.innerHTML = '<div class="table-wrap"><table class="s53-perm"><thead><tr><th>이름</th><th>권한</th><th>소속</th><th>열람 범위</th><th>볼 수 있는 매출 · 프로젝트</th></tr></thead><tbody>' + rows + '</tbody></table></div>' + (can ? '' : '<div class="org-sub" style="padding:10px 4px">대표 · 관리자만 바꿀 수 있어요.</div>');
+  el.innerHTML = '<div class="table-wrap"><table class="s53-perm"><thead><tr><th>이름</th><th>권한</th><th>소속</th><th>열람 범위</th><th>볼 수 있는 매출 (대시보드 · 분석)</th></tr></thead><tbody>' + rows + '</tbody></table></div>' + (can ? '' : '<div class="org-sub" style="padding:10px 4px">대표 · 관리자만 바꿀 수 있어요.</div>');
 };
 
 // ── 베뉴 임직원 동기화: 팀을 새로 만들거나 바꾸지 않음 (조직은 설정에서만 관리) ──
@@ -20582,6 +20586,59 @@ bdRenderPanel = (function (orig) {
     return r;
   };
 })(bdRenderPanel);
+
+// ════ 프로젝트는 전 직원이 모두 봄 · 매출 통계만 열람 범위 ════
+// 프로젝트 목록 · 상세 · 검색 · 홈 목록 · 보드 = 전체 / 대시보드 · 매출 분석 · 거래처 매출 · 홈 실적 카드 = 매출 열람 범위
+function s53AllProjects() { return (DB.projects || []).filter(Boolean); }
+getAccessibleProjects = s53AllProjects;
+['renderAnalytics', 'clAll'].forEach(function (n) {
+  var orig = window[n]; if (typeof orig !== 'function') return;
+  window[n] = function () { var keep = getAccessibleProjects; getAccessibleProjects = scProjects; try { return orig.apply(this, arguments); } finally { getAccessibleProjects = keep; } };
+});
+
+// ════ 팀 · 본부 이름 연동 ════
+// 프로젝트에는 팀 이름 · 본부 이름이 글자로 저장돼 있어서, 팀을 지우고 새로 만들거나 본부를 옮기면 어긋남 → 맞춰 줌
+function s53FixProjectDepts() {
+  var ch = 0;
+  (DB.projects || []).forEach(function (p) {
+    if (!p) return; var t = s53Team(p.team); if (!t) return;
+    var d = s53Dept(t.deptId), dn = d ? d.name : '';
+    if ((p.dept || '') !== dn) { p.dept = dn; ch++; }
+  });
+  (DB.users || []).forEach(function (u) { var t = s53Team(u.team); if (t && (u.deptId || '') !== (t.deptId || '')) { u.deptId = t.deptId || ''; ch++; } });
+  return ch;
+}
+// 지금 팀 목록에 없는 팀 이름 (프로젝트 · 직원에 남아 있는 옛 이름)
+function s53Orphans() {
+  var m = {};
+  (DB.projects || []).forEach(function (p) { if (p && p.team && !s53Team(p.team)) { var o = m[p.team] || (m[p.team] = { name: p.team, pj: 0, us: 0, dept: p.dept || '' }); o.pj++; } });
+  (DB.users || []).forEach(function (u) { if (u.status === 'active' && u.team && !s53Team(u.team)) { var o = m[u.team] || (m[u.team] = { name: u.team, pj: 0, us: 0, dept: '' }); o.us++; } });
+  return Object.keys(m).map(function (k) { return m[k]; }).sort(function (a, b) { return b.pj - a.pj; });
+}
+// 옛 팀 이름 → 지금 팀으로 한 번에
+function s53MapTeam(oldName, i) {
+  var sel = document.getElementById('s53-om-' + i), to = sel ? sel.value : ''; if (!to) { showToast('바꿀 팀을 골라 주세요', 'error'); return; }
+  var t = to === '__none' ? null : s53Team(to), dn = t ? ((s53Dept(t.deptId) || {}).name || '') : '', np = 0, nu = 0;
+  (DB.projects || []).forEach(function (p) { if (p && p.team === oldName) { p.team = t ? t.name : ''; if (t) p.dept = dn; np++; } });
+  (DB.users || []).forEach(function (u) { if (u.team === oldName) { u.team = t ? t.name : ''; if (t) u.deptId = t.deptId || ''; nu++; } });
+  saveDB(); renderTeamsPage(); showToast('"' + oldName + '" → ' + (t ? t.name : '팀 없음') + ' · 프로젝트 ' + np + '개' + (nu ? ', 직원 ' + nu + '명' : '') + ' 옮겼어요');
+}
+var _s53OrgTeams = renderTeamsPage;
+renderTeamsPage = function () {
+  if (s53CanEditScope() && s53FixProjectDepts()) saveDB();
+  var r = _s53OrgTeams.apply(this, arguments);
+  try {
+    var ex = document.getElementById('s53-orphan'); if (ex) ex.remove();
+    var list = s53Orphans(), tl = document.getElementById('team-list'); if (!list.length || !tl) return r;
+    var card = tl.closest('.card') || tl.parentNode, E = qtEsc;
+    var opts = '<option value="">바꿀 팀 선택</option>' + (DB.teams || []).map(function (t) { var d = s53Dept(t.deptId); return '<option value="' + E(t.name) + '">' + E(t.name) + (d ? ' · ' + E(d.name) : '') + '</option>'; }).join('') + '<option value="__none">팀 없음</option>';
+    card.parentNode.insertAdjacentHTML('beforebegin', '<div class="card s53-orphan" id="s53-orphan"><div class="card-header"><span class="card-title">⚠️ 지금 팀 목록에 없는 팀 이름</span><span class="org-sub">팀을 지우고 새로 만들었거나 이름이 달라진 경우예요. 지금 팀으로 옮기면 프로젝트 · 직원의 팀과 본부가 함께 맞춰져요.</span></div>' +
+      list.map(function (o, i) { return '<div class="s53-row"><div class="s53-main"><b>' + E(o.name) + '</b><div class="org-sub">프로젝트 ' + o.pj + '개' + (o.us ? ' · 직원 ' + o.us + '명' : '') + (o.dept ? ' · 예전 본부 ' + E(o.dept) : '') + '</div></div><div class="s53-act"><select class="form-select s53-sel" id="s53-om-' + i + '" style="max-width:220px">' + opts + '</select><button class="btn btn-primary btn-xs" onclick="s53MapTeam(\'' + E(o.name).replace(/'/g, "\\'") + '\',' + i + ')">옮기기</button></div></div>'; }).join('') + '</div>');
+  } catch (e) { console.warn('53차 팀 이름', e); }
+  return r;
+};
+// 대표 · 관리자가 켜 있으면 접속할 때도 한 번 맞춤
+setTimeout(function () { try { if (s53CanEditScope() && s53FixProjectDepts()) saveDB(); } catch (e) {} }, 6000);
 
 // ════════════════════════════════════════════
 //  메뉴 리뉴얼 — 9개 메뉴 + 페이지 위 탭 + 결재함 + Ctrl K

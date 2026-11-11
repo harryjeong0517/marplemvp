@@ -5123,8 +5123,9 @@ function aprLblText(html, L) {
 }
 
 // ── 53차: 프로젝트 · 매출 열람 범위를 PC와 똑같이 (설정 › 매출 열람 권한) ──
-projects = function () { return me ? scopeProjects(me) : []; };
-canSeeMoney = function (p) { if (!me) return false; var s = scopeOf(me); return s.all || s.teams.indexOf(p.team) >= 0 || (s.depts || []).indexOf(p.dept) >= 0 || p.manager === me.name || p.manager === me.id || (p.createdBy && p.createdBy === me.id); };
+projects = function () { return me ? (DB.projects || []).filter(Boolean) : []; };  // 프로젝트는 전 직원이 모두 봄
+canSeeMoney = function (p) { return !!me; };
+var _s53MoneyScoped = function (p) { if (!me) return false; var s = scopeOf(me); return s.all || s.teams.indexOf(p.team) >= 0 || (s.depts || []).indexOf(p.dept) >= 0 || p.manager === me.name || p.manager === me.id || (p.createdBy && p.createdBy === me.id); };
 // ── 결재 단계 이름: 본부마다 (PC 설정 › 본부 수정) ──
 aprLblWrap('mpLabel', function (pay) { var f = pay && pay.approval ? aprFindPay(pay.approval) : null; return [pay, f ? f.p : null]; });
 aprLblWrap('mpRow', function (x) { return x ? [x.pay, x.p] : null; });
