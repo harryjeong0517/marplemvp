@@ -3052,8 +3052,8 @@ nav .nav-section.rn-old { display: none !important; }
       <!-- ATTACHMENTS SECTION -->
       <div class="sep"></div>
       <div style="margin-bottom:12px;">
-        <div style="font-size:13px;font-weight:600;margin-bottom:2px;">📎 첨부 서류</div>
-        <div style="font-size:11px;color:var(--text3);">통장사본, 사업자등록증, 견적서 등 관련 서류를 첨부하세요.</div>
+        <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;"><div class="v3-sec">📎 첨부 서류</div>
+        <div class="v3-hint">통장사본, 사업자등록증, 견적서 등 관련 서류를 첨부하세요.</div></div>
       </div>
       <!-- Drop Zone -->
       <div class="file-drop-zone no-print" id="pay-file-drop"
@@ -3063,7 +3063,7 @@ nav .nav-section.rn-old { display: none !important; }
         onclick="document.getElementById('pay-file-input').click()">
         <div style="font-size:22px;margin-bottom:6px;">📂</div>
         <div style="font-size:13px;color:var(--text2);margin-bottom:2px;">클릭하거나 파일을 드래그하세요</div>
-        <div style="font-size:11px;color:var(--text3);">PDF, JPG, PNG, Excel — 파일당 최대 10MB</div>
+        <div style="font-size:13px;color:var(--text3);">PDF, JPG, PNG, Excel — 파일당 최대 10MB</div>
       </div>
       <input type="file" id="pay-file-input" multiple accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx"
         style="display:none;" onchange="payFileSelected(event)">
@@ -3074,8 +3074,8 @@ nav .nav-section.rn-old { display: none !important; }
       <div class="sep"></div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <div>
-          <div style="font-size:13px;font-weight:600;margin-bottom:2px;">✍️ 결재 서명란</div>
-          <div style="font-size:11px;color:var(--text3);">팀장/실장 → 본부장 → 대표 순으로 순차 승인됩니다.</div>
+          <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;"><div class="v3-sec">✍️ 결재 서명란</div>
+          <div class="v3-hint">팀장/실장 → 본부장 → 대표 순으로 순차 승인됩니다.</div></div>
         </div>
         <div id="pay-approve-btn-wrap" class="no-print"></div>
       </div>
@@ -8998,7 +8998,7 @@ function renderApprovalSigs() {
     const isLocked    = !isApproved && !isRej && !isPending && !isResubmit;
 
     let borderColor, bgColor, labelColor, statusText;
-    if (isApproved)    { borderColor='#15803d'; bgColor='rgba(21,128,61,0.06)';  labelColor='var(--green)';  statusText=`✓ ${sigData.by} · ${sigData.at}`; }
+    if (isApproved)    { const _img = sigData.imgData || (typeof usSigByName === 'function' ? usSigByName(sigData.by, role) : null); if (sigData.jeongyeol) { borderColor='#FF8900'; bgColor='rgba(255,137,0,0.04)'; } else if (!_img) { borderColor='#24803D'; bgColor='#F1F7F4'; } else { borderColor='#15803d'; bgColor='rgba(21,128,61,0.06)'; } labelColor='var(--green)';  statusText=`✓ ${sigData.by} · ${sigData.at}`; }
     else if (isRej)    { borderColor='#c62828'; bgColor='rgba(198,40,40,0.08)';   labelColor='var(--red)';    statusText=`✗ 반려 · ${sigData.by}`; }
     else if (isPending){ borderColor='#007db8'; bgColor='rgba(0,125,184,0.06)';  labelColor='var(--marple)'; statusText='승인 대기'; }
     else if (isResubmit){ borderColor='#d97706'; bgColor='rgba(217,119,6,0.08)'; labelColor='var(--orange)'; statusText='수정 후 재결재 필요'; }
@@ -9011,8 +9011,8 @@ function renderApprovalSigs() {
       innerContent = imgSrc && !isJeong
         ? `<img src="${imgSrc}" style="max-width:100%;max-height:80px;object-fit:contain;margin:auto;display:block;">`
         : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:80px;gap:4px;">
-            <div style="width:54px;height:54px;border:2.5px solid ${isJeong?'#d97706':'#15803d'};border-radius:50%;display:flex;align-items:center;justify-content:center;color:${isJeong?'#d97706':'#15803d'};font-size:12px;font-weight:700;transform:rotate(-15deg);">${isJeong?'전결':'승인'}</div>
-            ${isJeong?`<div style="font-size:9px;color:var(--orange);font-weight:600;">전결처리</div>`:''}
+            <div style="width:58px;height:58px;box-sizing:border-box;border:2px solid ${isJeong?'#FF8900':'#24803D'};border-radius:50%;display:flex;align-items:center;justify-content:center;color:${isJeong?'#D97706':'#24803D'};font-size:14px;font-weight:600;transform:rotate(-15deg);">${isJeong?'전결':'승인'}</div>
+            <div style="font-size:11px;color:${isJeong?'#D97706':'#24803D'};font-weight:600;">${isJeong?'전결처리':'승인처리'}</div>
           </div>`;
     } else if (isRej) {
       innerContent = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:80px;gap:6px;">
@@ -9033,11 +9033,11 @@ function renderApprovalSigs() {
       : '';
 
     return `<div>
-      <div style="font-size:11px;color:${labelColor};letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;font-weight:600;">${label}</div>
-      <div style="border:1.5px solid ${borderColor};border-radius:var(--r);overflow:hidden;background:${bgColor};min-height:100px;padding:8px;">
+      <div style="font-size:14px;color:#111;margin-bottom:6px;font-weight:600;">${label}</div>
+      <div style="border:${isApproved ? '1px' : '1.5px'} solid ${borderColor};border-radius:10px;overflow:hidden;background:${bgColor};min-height:100px;padding:8px;">
         ${innerContent}
       </div>
-      <div style="margin-top:5px;font-size:10px;color:var(--text3);text-align:center;">
+      <div style="margin-top:5px;font-size:12px;color:var(--text3);text-align:center;">
         ${statusText}${adminBtn}
       </div>
     </div>`;
@@ -18223,7 +18223,7 @@ function vdRender() {
     var saved = v && v.docs ? Object.keys(v.docs).filter(function (k) { return v.docs[k] && v.docs[k].fileRef; }) : [];
     if (!VD.sel) VD.sel = { bank: !saved.includes('bank'), biz: !saved.includes('biz'), stmt: true };
     var em = VD.email || (v && v.email) || '';
-    box.innerHTML = '<div class="vd-req"><div class="vd-h">📎 업체에 서류 요청하기<span class="vd-tag gray">링크로 받기</span></div>' +
+    box.innerHTML = '<div class="vd-req"><div class="vd-h" style="font-size:15px">📎 업체에 서류 요청하기<span class="vd-tag gray">링크로 받기</span></div>' +
       '<p>업체가 링크를 열어 로그인 없이 서류 · 계좌를 올리면 이 페이먼트 첨부에 자동으로 붙어요. 링크는 ' + VD_DAYS + '일 동안 유효해요.</p>' +
       (saved.length ? '<div class="vd-saved">💾 <b>' + E(v.name) + '</b>에서 전에 받은 서류가 있어요: ' + saved.map(function (k) { return vdDocName(k); }).join(', ') + ' <button class="btn btn-secondary btn-xs" onclick="vdUseSaved()">바로 첨부</button></div>' : '') +
       '<div class="vd-chk">' + VD_DOCS.map(function (d) { return '<button class="' + (VD.sel[d[0]] ? 'on' : '') + '" onclick="VD.sel[\'' + d[0] + '\']=!VD.sel[\'' + d[0] + '\'];vdRender()">' + (VD.sel[d[0]] ? '✓ ' : '') + d[1] + '</button>'; }).join('') + '</div>' +
@@ -21154,7 +21154,7 @@ document.getElementById('app').style.display = 'none';
     try { if (c && c.pid) { p = (DB.projects || []).find(function (x) { return x.id === c.pid; }) || null; pay = getPayForContext(c.pid, c.itemId, c.gpId || null); } } catch (e) {}
     var res = p ? aprWithLabels(pay || {}, p, _r, this, arguments) : _r.apply(this, arguments);
     try {
-      var w = document.getElementById('pay-approve-btn-wrap'), sub = w && w.previousElementSibling && w.previousElementSibling.children[1];
+      var w = document.getElementById('pay-approve-btn-wrap'), sub = w && w.previousElementSibling && w.previousElementSibling.querySelector('.v3-hint');
       var L = (p && aprStageLabels(pay || {}, p)) || {};
       var nm = function (k) { return L[k] || aprBaseLabel(k); };
       if (sub) sub.textContent = nm('teamLead') + ' → ' + nm('deptHead') + ' → ' + nm('ceo') + ' 순으로 순차 승인됩니다.';
@@ -21182,6 +21182,20 @@ deleteProject = function (pid) {
   showToast('"' + p.name + '" 프로젝트가 삭제되었습니다.');
 };
 
+</script>
+
+<style id="v3-style">
+/* 62차 — Figma 페이먼트 v3 */
+#payment-modal{--marple:#009BDF;--marple2:#0087c3;--accent:#009BDF;--blue:#009BDF;--marple-light:#e5f5fc}
+#payment-modal .v3-sec{font-size:15px;font-weight:600;color:#111}
+#payment-modal .v3-hint{font-size:13px;color:var(--text3)}
+#payment-modal .form-label{color:#111}
+#payment-modal .vd-req p{font-size:13px}
+#payment-modal .btn-primary{background:#009BDF;border-color:#009BDF}
+</style>
+<script>
+// 62차: 페이먼트 창 — 바깥(어두운 영역)을 누르면 닫기 (창 안에서 끌다가 밖에서 놓는 경우는 제외)
+(function(){var m=document.getElementById('payment-modal');if(!m)return;var down=null;m.addEventListener('mousedown',function(e){down=e.target;});m.addEventListener('click',function(e){if(e.target===m&&down===m)closeModal('payment-modal');down=null;});})();
 </script>
 </body>
 </html>
