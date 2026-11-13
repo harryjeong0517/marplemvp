@@ -21197,5 +21197,55 @@ deleteProject = function (pid) {
 // 62차: 페이먼트 창 — 바깥(어두운 영역)을 누르면 닫기 (창 안에서 끌다가 밖에서 놓는 경우는 제외)
 (function(){var m=document.getElementById('payment-modal');if(!m)return;var down=null;m.addEventListener('mousedown',function(e){down=e.target;});m.addEventListener('click',function(e){if(e.target===m&&down===m)closeModal('payment-modal');down=null;});})();
 </script>
+<script>
+// ════ 63차 — 거래처 › 클라이언트 직접 추가 (프로젝트 없이도) ════
+function clAddOpen() {
+  var m = document.getElementById('cl-modal'); if (!m) { m = document.createElement('div'); m.id = 'cl-modal'; m.className = 'modal-overlay'; document.body.appendChild(m); }
+  var f = function (id, l, ph, req) { return '<div class="form-group"><label class="form-label">' + l + (req ? ' <span style="color:var(--red)">*</span>' : '') + '</label><input class="form-input" id="' + id + '" placeholder="' + (ph || '') + '"></div>'; };
+  m.innerHTML = '<div class="modal" style="max-width:540px"><button class="modal-close" onclick="closeModal(\'cl-modal\')">✕</button><div class="modal-title">🤝 클라이언트 추가</div>' +
+    f('ca-name', '클라이언트 이름', '예: 메가존클라우드', true) +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">' + f('ca-ind', '업종', 'IT · 컨설팅') + f('ca-biz', '사업자번호', '000-00-00000') + '</div>' +
+    f('ca-addr', '주소', '') +
+    '<div style="font-size:12.5px;font-weight:700;margin:6px 0 8px;color:var(--text2)">담당자 (선택)</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">' + f('ca-cn', '이름', '홍길동') + f('ca-ct', '직함 · 부서', '매니저 · 마케팅팀') + f('ca-cp', '연락처', '010-0000-0000') + f('ca-ce', '이메일', 'name@company.com') + '</div>' +
+    '<div style="font-size:12px;color:var(--text3);margin:-2px 0 14px">브랜드 컬러 · 로고는 추가한 뒤 [정보 수정]에서 넣을 수 있어요.</div>' +
+    '<div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn btn-secondary" onclick="closeModal(\'cl-modal\')">취소</button><button class="btn btn-primary" onclick="clAddSave()">추가</button></div></div>';
+  openModal('cl-modal');
+  setTimeout(function () { var i = document.getElementById('ca-name'); if (i) i.focus(); }, 50);
+}
+function clAddSave() {
+  var v = function (id) { var e = document.getElementById(id); return e ? e.value.trim() : ''; };
+  var name = v('ca-name'); if (!name) { showToast('클라이언트 이름을 넣어 주세요', 'error'); return; }
+  var dup = clAll().find(function (c) { return clSame(c.name, name); });
+  if (dup) { showToast('"' + dup.name + '"(이)가 이미 있어요', 'error'); CLU.sel = dup.name; closeModal('cl-modal'); renderClientsPage(); return; }
+  var c = clEnsure(name);
+  c.industry = v('ca-ind'); c.bizNo = v('ca-biz'); c.address = v('ca-addr');
+  if (v('ca-cn') || v('ca-cp') || v('ca-ce')) {
+    var tt = v('ca-ct').split(/\s*[·,\/]\s*/);
+    c.contacts = (c.contacts || []).concat([{ name: v('ca-cn'), title: tt[0] || '', dept: tt[1] || '', phone: v('ca-cp'), email: v('ca-ce') }]);
+  }
+  c.createdBy = currentUser ? currentUser.name : ''; c.createdAt = new Date().toISOString();
+  CLU.q = ''; CLU.sel = name; saveDB(); closeModal('cl-modal'); renderClientsPage(); showToast('"' + name + '" 클라이언트를 추가했어요');
+}
+(function () {
+  if (typeof renderClientsPage !== 'function') return;
+  var _r = renderClientsPage;
+  renderClientsPage = function () {
+    var res = _r.apply(this, arguments);
+    try {
+      var sr = document.querySelector('#clients-root .cl-sr');
+      if (sr && !sr.querySelector('.cl-add')) {
+        var b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-primary btn-sm cl-add';
+        b.style.cssText = 'width:100%;margin-top:8px;justify-content:center'; b.textContent = '+ 클라이언트 추가'; b.onclick = clAddOpen;
+        sr.appendChild(b);
+      }
+      var none = document.querySelector('#clients-root .cl-none');
+      if (none && !CLU.q && none.textContent.indexOf('클라이언트가 없어요') >= 0) none.innerHTML = '클라이언트가 없어요<br><small>위 [+ 클라이언트 추가]로 넣거나, 프로젝트를 만들면 자동으로 생겨요</small>';
+    } catch (e) {}
+    return res;
+  };
+})();
+
+</script>
 </body>
 </html>
