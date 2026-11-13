@@ -21251,5 +21251,89 @@ function clAddSave() {
 // 64차: 베뉴 화면이 ERP 로그인 여부를 확인할 수 있게
 window.mfLoggedIn = function () { try { return !!currentUser; } catch (e) { return false; } };
 </script>
+<script>
+// ════ 65차 — 클라이언트 로고 자동 흰색 심볼 변환 ════
+// 올린 이미지의 배경(투명 또는 모서리 색)을 지우고, 남은 모양을 흰색으로 바꿔 꽉 맞게 잘라서 저장
+function clLogoWhite(src, cb) {
+  var im = new Image();
+  im.onload = function () {
+    try {
+      var W0 = im.naturalWidth || 200, H0 = im.naturalHeight || 200, sc = Math.min(1, 600 / Math.max(W0, H0));
+      var w = Math.max(1, Math.round(W0 * sc)), h = Math.max(1, Math.round(H0 * sc));
+      var c = document.createElement('canvas'); c.width = w; c.height = h; var x = c.getContext('2d'); x.drawImage(im, 0, 0, w, h);
+      var g = x.getImageData(0, 0, w, h), d = g.data, n = w * h;
+      // 모서리가 투명하면 투명 배경, 아니면 모서리 색을 배경으로 보고 지움
+      var cs = [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1], [w >> 1, 0], [0, h >> 1], [w - 1, h >> 1], [w >> 1, h - 1]], tr = 0, br = 0, bg = 0, bb = 0, k = 0;
+      cs.forEach(function (p) { var i = (p[1] * w + p[0]) * 4; if (d[i + 3] < 40) tr++; else { br += d[i]; bg += d[i + 1]; bb += d[i + 2]; k++; } });
+      var useAlpha = tr >= 4 || !k; if (k) { br /= k; bg /= k; bb /= k; }
+      var x0 = w, y0 = h, x1 = -1, y1 = -1;
+      for (var j = 0; j < h; j++) for (var i2 = 0; i2 < w; i2++) {
+        var o = (j * w + i2) * 4, a = d[o + 3];
+        if (!useAlpha) { var dist = Math.sqrt(Math.pow(d[o] - br, 2) + Math.pow(d[o + 1] - bg, 2) + Math.pow(d[o + 2] - bb, 2)); a = Math.round(a * Math.max(0, Math.min(1, (dist - 30) / 60))); }
+        d[o] = d[o + 1] = d[o + 2] = 255; d[o + 3] = a;
+        if (a > 40) { if (i2 < x0) x0 = i2; if (i2 > x1) x1 = i2; if (j < y0) y0 = j; if (j > y1) y1 = j; }
+      }
+      if (x1 < 0) { cb(null); return; }
+      x.putImageData(g, 0, 0);
+      var cw = x1 - x0 + 1, ch = y1 - y0 + 1, H = Math.min(96, ch), Wd = Math.round(cw * H / ch); if (Wd > 480) { H = Math.round(H * 480 / Wd); Wd = 480; }
+      var c2 = document.createElement('canvas'); c2.width = Wd; c2.height = H; var x2 = c2.getContext('2d'); x2.imageSmoothingQuality = 'high'; x2.drawImage(c, x0, y0, cw, ch, 0, 0, Wd, H);
+      cb(c2.toDataURL('image/png'));
+    } catch (e) { cb(null); }
+  };
+  im.onerror = function () { cb(null); }; im.src = src;
+}
+if (typeof clLogoPick === 'function') clLogoPick = function (input) {
+  var f = input.files && input.files[0]; if (!f) return;
+  if (!/^image\//.test(f.type)) { showToast('이미지 파일(PNG · SVG · JPG)을 골라 주세요', 'error'); return; }
+  var url = URL.createObjectURL(f);
+  clLogoWhite(url, function (d) {
+    URL.revokeObjectURL(url);
+    if (!d) { showToast('로고 모양을 찾지 못했어요 — 배경과 색이 다른 로고 파일을 골라 주세요', 'error'); return; }
+    var el = document.getElementById('cl-logo'); el.value = d; el.dataset.w = '1'; clLogoPreview(); showToast('배경을 지우고 흰색 심볼로 바꿨어요');
+  });
+};
+if (typeof clEditSave === 'function') clEditSave = (function (orig) {
+  return function (name) { var r = orig.apply(this, arguments); try { var el = document.getElementById('cl-logo'), c = clRec(name); if (c && c.logo && el && el.dataset.w === '1') { c.logoW = 1; saveDB(); } } catch (e) {} return r; };
+})(clEditSave);
+// 이전에 올려 둔 로고(data:)도 한 번씩 변환
+function clLogoMigrate() {
+  try {
+    var todo = (DB.clients || []).filter(function (c) { return c && c.logo && /^data:image\//.test(c.logo) && !c.logoW; });
+    if (!todo.length) return;
+    var left = todo.length, changed = 0;
+    todo.forEach(function (c) { clLogoWhite(c.logo, function (d) { if (d) { c.logo = d; changed++; } c.logoW = 1; if (--left === 0) { saveDB(); if (changed && typeof renderDashboard === 'function' && document.querySelector('#page-dashboard.active')) try { renderDashboard(); } catch (e) {} } }); });
+  } catch (e) {}
+}
+setTimeout(clLogoMigrate, 4000); setInterval(clLogoMigrate, 60000);
+
+</script>
+<script>
+// ════ 66차 — 클라이언트 아이콘에 브랜드 컬러 + (있으면) 흰색 심볼 로고 ════
+if (typeof clColor === 'function' && typeof hmBrandGrad === 'function') clColor = (function (orig) {
+  return function (n) { var g = ''; try { g = hmBrandGrad(n); } catch (e) {} return g || orig.apply(this, arguments); };
+})(clColor);
+function clIconLogos(root) {
+  try {
+    (root || document).querySelectorAll('#clients-root .cl-lg').forEach(function (el) {
+      if (el.dataset.lg) return; el.dataset.lg = '1';
+      var nm = (el.closest('[data-n]') || {}).dataset ? el.closest('[data-n]').dataset.n : null;
+      if (!nm) { var h2 = el.parentNode && el.parentNode.querySelector('h2'); nm = h2 ? (h2.firstChild && h2.firstChild.nodeType === 3 ? h2.firstChild.textContent : h2.textContent) : null; }
+      var lg = nm && typeof hmBrandLogo === 'function' ? hmBrandLogo(nm.trim()) : '';
+      if (!lg) return;
+      var ab = el.textContent; el.textContent = '';
+      var im = document.createElement('img'); im.src = lg; im.alt = '';
+      im.onerror = function () { im.remove(); el.textContent = ab; };
+      el.appendChild(im);
+    });
+  } catch (e) {}
+}
+(function () {
+  if (typeof renderClientsPage !== 'function') return;
+  var _r = renderClientsPage;
+  renderClientsPage = function () { var r = _r.apply(this, arguments); clIconLogos(); return r; };
+})();
+(function () { var st = document.createElement('style'); st.textContent = '.cl-lg img{width:62%;height:62%;object-fit:contain;filter:brightness(0) invert(1);display:block}'; document.head.appendChild(st); })();
+
+</script>
 </body>
 </html>
