@@ -3424,7 +3424,7 @@ function closePreview(fromPop) {
 function showLogin(msg) {
   document.getElementById('app').classList.add('hide');
   var L = document.getElementById('login'); L.classList.remove('hide');
-  L.innerHTML = '<img src="' + LOGO + '" alt="marple"><div class="mf-sub">MARPLE <b>WORKS</b><i>·</i>마플웍스</div><h1>마플 업무를<br>폰에서 바로</h1><p>PC ERP와 같은 계정으로 로그인하세요.</p>' +
+  L.innerHTML = '<img src="' + LOGO + '" alt="marple"><div class="mf-sub">MARPLE <b>WORKS</b><i>·</i>마플웍스</div><h1>마플 업무를<br>폰에서 바로</h1><p>MARPLE WORKS와 같은 계정으로 로그인하세요.</p>' +
     '<form onsubmit="event.preventDefault();doLogin()"><input type="text" id="lg-id" placeholder="아이디" autocomplete="username" autocapitalize="off" autocorrect="off"><input type="password" id="lg-pw" placeholder="비밀번호" autocomplete="current-password">' +
     '<label class="keep"><input type="checkbox" id="lg-keep" checked> 이 폰에서 로그인 유지</label><div class="err" id="lg-err">' + esc(msg || '') + '</div><button class="btn sky block" id="lg-btn">로그인</button>' +
     '<div class="sync"><span id="sync-dot" class="dot"></span> <span id="sync-text"></span></div></form>';
