@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>MARFLOW</title>
+<title>MARPLE WORKS</title>
 <meta name="theme-color" content="#111827">
 <meta name="robots" content="noindex">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -644,7 +644,7 @@ details.more summary::-webkit-details-marker { display: none; }
 .ci-times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; } .ci-times div { background: #111827; border-radius: 12px; padding: 12px; text-align: center; } .ci-times small { display: block; } .ci-times b { font-size: 26px; font-variant-numeric: tabular-nums; color: #6b7280; } .ci-times .on b { color: #4ade80; }
 .ci-btn { height: 58px; font-size: 18px; } .ci-done { background: #064e3b; color: #6ee7b7; border-radius: 12px; padding: 14px; text-align: center; font-weight: 700; } .ci-note { font-size: 12px; color: #9ca3af; margin: 12px 0 0; line-height: 1.5; }
 
-/* MARFLOW */
+/* MARPLE WORKS */
 #login .mf-sub{font-size:11.5px;font-weight:600;color:#8b95a7;letter-spacing:.3em;margin:10px 0 2px;white-space:nowrap}#login .mf-sub b{color:#fff;font-weight:900}#login .mf-sub i{font-style:normal;color:#38bdf8;letter-spacing:0;margin:0 .45em 0 .1em}
 
 /* ═══ 업체 서류 제출 페이지 ═══ */
@@ -3424,7 +3424,7 @@ function closePreview(fromPop) {
 function showLogin(msg) {
   document.getElementById('app').classList.add('hide');
   var L = document.getElementById('login'); L.classList.remove('hide');
-  L.innerHTML = '<img src="' + LOGO + '" alt="marple"><div class="mf-sub">MAR<b>FLOW</b><i>·</i>마플로우</div><h1>마플 업무를<br>폰에서 바로</h1><p>PC ERP와 같은 계정으로 로그인하세요.</p>' +
+  L.innerHTML = '<img src="' + LOGO + '" alt="marple"><div class="mf-sub">MARPLE <b>WORKS</b><i>·</i>마플웍스</div><h1>마플 업무를<br>폰에서 바로</h1><p>PC ERP와 같은 계정으로 로그인하세요.</p>' +
     '<form onsubmit="event.preventDefault();doLogin()"><input type="text" id="lg-id" placeholder="아이디" autocomplete="username" autocapitalize="off" autocorrect="off"><input type="password" id="lg-pw" placeholder="비밀번호" autocomplete="current-password">' +
     '<label class="keep"><input type="checkbox" id="lg-keep" checked> 이 폰에서 로그인 유지</label><div class="err" id="lg-err">' + esc(msg || '') + '</div><button class="btn sky block" id="lg-btn">로그인</button>' +
     '<div class="sync"><span id="sync-dot" class="dot"></span> <span id="sync-text"></span></div></form>';
