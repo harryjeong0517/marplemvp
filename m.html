@@ -2661,7 +2661,7 @@ var ROOTS = { home: 1, board: 1, chat: 1, projects: 1, venues: 1, more: 1 };
 // ── 라우터 ──
 function go(h) { if (location.hash === '#' + h) render(); else location.hash = h; }
 function back() { if (history.length > 1 && M._nav > 0) history.back(); else go(curRoot()); }
-function curRoot() { var r = (location.hash.slice(1) || 'home').split('/')[0]; return ROOTS[r] ? r : ({ room: 'chat', cal: 'home', pay: 'more', payd: 'more', task: 'board', project: 'projects', venue: 'venues', partner: 'venues', lib: 'more', leave: 'more', noti: 'home' }[r] || 'home'); }
+function curRoot() { var r = (location.hash.slice(1) || 'home').split('/')[0]; return ROOTS[r] ? r : ({ room: 'chat', cal: 'home', pay: 'more', payd: 'more', task: 'board', project: 'projects', pq: 'projects', pqi: 'projects', venue: 'venues', partner: 'venues', lib: 'more', leave: 'more', noti: 'home' }[r] || 'home'); }
 window.addEventListener('hashchange', function () { M._nav = (M._nav || 0) + 1; if (SHEET.open) closeSheet(true); render(true); });
 function render(nav) {
   if (!me) return;
@@ -2680,6 +2680,8 @@ function render(nav) {
     else if (r === 'task') out = vTask(arg);
     else if (r === 'projects') out = vProjects();
     else if (r === 'project') out = vProject(arg);
+    else if (r === 'pq') out = vPQ(arg);
+    else if (r === 'pqi') out = vPQI(arg);
     else if (r === 'venues') out = vVenues();
     else if (r === 'venue') out = vVenue(arg);
     else if (r === 'partner') out = vPartner(arg);
@@ -3501,6 +3503,8 @@ render = function (nav) {
     else if (r === 'task') out = vTask(arg);
     else if (r === 'projects') out = vProjects();
     else if (r === 'project') out = vProject(arg);
+    else if (r === 'pq') out = vPQ(arg);
+    else if (r === 'pqi') out = vPQI(arg);
     else if (r === 'venues') out = vVenues();
     else if (r === 'venue') out = vVenue(arg);
     else if (r === 'partner') out = vPartner(arg);
@@ -5306,6 +5310,189 @@ window.addEventListener('hashchange', function () { if (MM.kind) mModalClose(); 
   ].join('\n');
   document.head.appendChild(st);
 })();
+
+</script>
+<script>
+// ════ 72차 — 모바일 견적서 (보기 + 현장 체크) ════
+// 프로젝트 → [견적서] : 요약 → 항목 목록(현장 체크 · 필터) → 항목 상세(아래 창)
+// 현장 체크는 qchecks 목록에 { id: 프로젝트__항목, pid, itemId, by, at } 로 저장 → 팀원 모두에게 바로 보임
+if (M_LISTS.indexOf('qchecks') < 0) M_LISTS.push('qchecks');
+UI.pq = UI.pq || { f: 'all', q: '' };
+var PQ_IC = [[/장소|대관|시설|베뉴|venue|hall/i, '🏢', '#e5f5fc'], [/무대|연출|음향|조명|영상|led|stage|sound|light/i, '🎤', '#f3e8ff'], [/인력|스태프|운영|진행|mc|staff|요원/i, '👥', '#e7f6ec'],
+  [/케이터링|식음|음식|도시락|커피|f&b|catering/i, '🍽', '#fff1e0'], [/인쇄|제작|출력|배너|굿즈|print/i, '🖨', '#fee4e2'], [/기획|운영비|대행|수수료|fee|commission|plan/i, '📋', '#eef0f4'], [/교통|운송|차량|버스|숙박|항공/i, '🚌', '#e3ebff']];
+function pqCatIc(n) { var x = PQ_IC.find(function (c) { return c[0].test(n || ''); }); return x ? [x[1], x[2]] : ['📦', '#eef0f4']; }
+function pqItems(p) { return (p.items || []).filter(function (i) { return i && i.category !== 'DISCOUNT'; }); }
+function pqCat(i) { return i.isSpecial ? '기획 · 운영비' : (i.category || '기타'); }
+function pqPayOf(p, i) {
+  var s = (p.payments || []).find(function (x) { return x.itemId === i.id; });
+  if (s) return { pay: s, key: 'i:' + i.id };
+  var g = (p.groupPayments || []).find(function (x) { return (x.itemIds || []).indexOf(i.id) >= 0; });
+  return g ? { pay: g, key: 'g:' + g.id } : null;
+}
+function pqState(p, i) {
+  var f = pqPayOf(p, i);
+  if (!f) return { t: '페이먼트 요청 전', c: 'x', paid: false, wait: false, f: null };
+  var L = mpLabel(f.pay), paid = !!f.pay.depositConfirmed;
+  var c = L[1] === 'no' ? 'r' : paid ? 'g' : L[1] === 'ok' ? 'b' : L[1] === 'wait' ? 'o' : 'x';
+  var t = paid ? '결재 완료 · 지급 완료' : L[1] === 'ok' ? '결재 완료 · ' + (f.pay.date ? '지급 예정 ' + md(f.pay.date) : '지급 전') : L[0];
+  return { t: t, c: c, paid: paid, wait: L[1] === 'wait', f: f };
+}
+function pqCk(pid, iid) { return (DB.qchecks || []).find(function (x) { return x.id === pid + '__' + iid; }); }
+function pqToggle(pid, iid, ev) {
+  if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+  var id = pid + '__' + iid, ex = pqCk(pid, iid);
+  if (!Array.isArray(DB.qchecks)) DB.qchecks = [];
+  if (ex) { DB.qchecks = DB.qchecks.filter(function (x) { return x.id !== id; }); delDoc('qchecks', id); toast('현장 체크를 풀었어요'); }
+  else { var o = { id: id, pid: pid, itemId: iid, by: me.name, at: new Date().toISOString() }; DB.qchecks.push(o); putDoc('qchecks', o); toast('✓ 현장 체크했어요'); }
+  if (SHEET.open) closeSheet(true);
+  render();
+}
+function pqSums(p) {
+  var its = pqItems(p), rev = its.reduce(function (s, i) { return s + (+i.total || 0); }, 0);
+  var buy = pjPurchase(p) + (typeof pjCard === 'function' ? pjCard(p) : 0);
+  var q = p.quote || {}, vs = q.versions || [], lv = vs[vs.length - 1] || null;
+  var vat = q.type === 'en' ? 0 : Math.round(rev * 0.1);
+  var withPay = its.filter(function (i) { return pqPayOf(p, i); }), paid = withPay.filter(function (i) { return pqPayOf(p, i).pay.depositConfirmed; });
+  var cks = its.filter(function (i) { return pqCk(p.id, i.id); }).length;
+  return { its: its, rev: rev, vat: vat, grand: (lv && lv.grand) || rev + vat, buy: buy, margin: rev ? (rev - buy) / rev * 100 : 0, lv: lv, paidPct: withPay.length ? Math.round(paid.length / withPay.length * 100) : 0, cks: cks, usd: q.type === 'en' };
+}
+function pqGroups(p, its) {
+  var map = {}, order = [];
+  its.forEach(function (i) { var c = pqCat(i); if (!map[c]) { map[c] = []; order.push(c); } map[c].push(i); });
+  return order.map(function (c) { return { name: c, items: map[c], sum: map[c].reduce(function (s, i) { return s + (+i.total || 0); }, 0) }; });
+}
+function vPQ(id) {
+  var p = pjOf(id);
+  if (!p) return { title: '견적서', html: emptyBox('프로젝트를 찾을 수 없어요') };
+  var S = pqSums(p);
+  if (!S.its.length) return { title: '견적서', html: '<div class="sec" style="margin-top:14px">' + emptyBox('아직 견적 항목이 없어요', 'PC에서 견적서를 만들거나 엑셀 견적서를 올리면 여기서 볼 수 있어요') + '</div>' };
+  var html = '<div class="sec" style="margin-top:14px"><div class="pq-hero"><div class="l">견적 총액 ' + (S.usd ? '' : '(VAT 포함)') + '</div><div class="v">' + Math.round(S.grand).toLocaleString('ko-KR') + '<small>원</small></div>' +
+    '<div class="s">공급가 ' + Math.round(S.rev).toLocaleString('ko-KR') + (S.vat ? ' · 부가세 ' + S.vat.toLocaleString('ko-KR') : '') + '</div>' +
+    '<div class="kv3"><div>매입 예정<b>' + Math.round(S.buy).toLocaleString('ko-KR') + '</b></div><div>마진<b class="' + (S.margin >= 0 ? 'up' : 'dn') + '">' + S.margin.toFixed(1) + '%</b></div><div>현장 체크<b>' + S.cks + ' / ' + S.its.length + '</b></div></div>' +
+    (S.lv ? '<div class="ver"><span class="chip">v' + esc(S.lv.v) + '</span>' + esc([S.lv.at, S.lv.by].filter(Boolean).join(' · ')) + '</div>' : '') + '</div></div>';
+  var vs = (p.quote && p.quote.versions) || [], wu = vs.slice().reverse().find(function (v) { return v.url; });
+  html += '<div class="sec"><div class="pq-btns">' + (wu ? '<a class="btn" href="' + esc(wu.url) + '" target="_blank" rel="noopener">📄 견적서 파일</a>' : '') +
+    '<button class="btn pri" onclick="go(\'pqi/' + p.id + '\')">☑ 항목 · 현장 체크</button></div></div>';
+  html += sec('항목별 금액', '<a onclick="UI.pq={f:\'all\',q:\'\'};go(\'pqi/' + p.id + '\')">전체 보기 &gt;</a>', '<div class="list pq-cats">' + pqGroups(p, S.its).map(function (g) {
+    var ic = pqCatIc(g.name), withPay = g.items.filter(function (i) { return pqPayOf(p, i); }), paid = withPay.filter(function (i) { return pqPayOf(p, i).pay.depositConfirmed; }).length;
+    var pct = withPay.length ? Math.round(paid / withPay.length * 100) : 0;
+    return '<button class="row" onclick="UI.pq={f:\'all\',q:\'\',cat:\'' + esc(g.name).replace(/'/g, '') + '\'};go(\'pqi/' + p.id + '\')"><span class="pq-ic" style="background:' + ic[1] + '">' + ic[0] + '</span><div class="main"><div class="t">' + esc(g.name) + '</div><div class="s">' + g.items.length + '개 항목 · 지급 ' + paid + '/' + withPay.length + '</div><div class="pq-bar"><i style="width:' + pct + '%;' + (pct === 100 ? 'background:var(--green)' : '') + '"></i></div></div><div class="pq-amt"><b>' + Math.round(g.sum).toLocaleString('ko-KR') + '</b><small>' + (S.rev ? (g.sum / S.rev * 100).toFixed(1) : '0') + '%</small></div></button>';
+  }).join('') + '</div>');
+  return { title: '견적서 · ' + p.name, html: html };
+}
+function vPQI(id) {
+  var p = pjOf(id);
+  if (!p) return { title: '견적 항목', html: emptyBox('프로젝트를 찾을 수 없어요') };
+  var F = UI.pq || { f: 'all', q: '' }, its = pqItems(p), q = String(F.q || '').trim().toLowerCase();
+  var st = {}; its.forEach(function (i) { st[i.id] = pqState(p, i); });
+  var cnt = { all: its.length, todo: its.filter(function (i) { return !pqCk(p.id, i.id); }).length, wait: its.filter(function (i) { return st[i.id].wait; }).length, unpaid: its.filter(function (i) { return !st[i.id].paid; }).length };
+  var list = its.filter(function (i) {
+    if (F.cat && pqCat(i) !== F.cat) return false;
+    if (F.f === 'todo' && pqCk(p.id, i.id)) return false;
+    if (F.f === 'wait' && !st[i.id].wait) return false;
+    if (F.f === 'unpaid' && st[i.id].paid) return false;
+    if (q) { var f = st[i.id].f, hay = [i.name, i.category, f && f.pay.company, f && f.pay.person].join(' ').toLowerCase(); if (hay.indexOf(q) < 0 && !(typeof chosungMatch === 'function' && chosungMatch(hay, q))) return false; }
+    return true;
+  });
+  var chip = function (k, l) { return '<button class="' + (F.f === k ? 'on' : '') + '" onclick="UI.pq.f=\'' + k + '\';render()">' + l + '<em>' + cnt[k] + '</em></button>'; };
+  var html = '<div class="sec" style="margin-top:12px"><div class="pq-srch">' + IC.search + '<input type="search" placeholder="항목 · 지급처 찾기" value="' + esc(F.q || '') + '" oninput="UI.pq.q=this.value;clearTimeout(window._pqT);window._pqT=setTimeout(function(){var y=window.scrollY;render();var i=document.querySelector(\'.pq-srch input\');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}window.scrollTo(0,y)},250)"></div>' +
+    '<div class="pq-chips">' + chip('all', '전체') + chip('todo', '현장 체크 전') + chip('wait', '결재 대기') + chip('unpaid', '미지급') + '</div>' +
+    (F.cat ? '<div class="pq-catf">' + esc(F.cat) + '만 보는 중 <button onclick="UI.pq.cat=\'\';render()">✕ 전체</button></div>' : '') +
+    '<div class="pq-hint">☑ 왼쪽 체크 = 현장 입고 · 설치 확인 (팀원 모두에게 바로 보여요)</div></div>';
+  var groups = pqGroups(p, list);
+  if (!list.length) html += '<div class="sec">' + emptyBox('조건에 맞는 항목이 없어요') + '</div>';
+  groups.forEach(function (g) {
+    var ic = pqCatIc(g.name);
+    html += '<div class="sec"><div class="pq-grp">' + ic[0] + ' ' + esc(g.name) + '<span>' + Math.round(g.sum).toLocaleString('ko-KR') + '</span></div>' + g.items.map(function (i) {
+      var s = st[i.id], ck = pqCk(p.id, i.id), f = s.f;
+      var meta = [(i.qty != null ? i.qty + (i.unit || (i.qty === 1 ? '식' : '')) : ''), (i.days && i.days > 1 ? i.days + '일' : ''), f && f.pay.company].filter(Boolean).join(' · ');
+      return '<div class="pq-it" onclick="pqOpen(\'' + p.id + '\',\'' + esc(i.id) + '\')"><button class="pq-ck' + (ck ? ' on' : '') + '" onclick="pqToggle(\'' + p.id + '\',\'' + esc(i.id) + '\',event)" aria-label="현장 체크">' + (ck ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5"><path d="M5 12l5 5 9-10"/></svg>' : '') + '</button>' +
+        '<div class="m"><b>' + esc(i.name || '(이름 없음)') + '</b>' + (meta ? '<small>' + esc(meta) + '</small>' : '') + '<span class="pq-pill ' + s.c + '">' + esc(s.t) + '</span>' + (ck ? '<small class="ckby">✓ ' + esc(ck.by || '') + ' · ' + md(String(ck.at || '').slice(0, 10)) + '</small>' : '') + '</div>' +
+        '<div class="r"><b>' + Math.round(+i.total || 0).toLocaleString('ko-KR') + '</b></div></div>';
+    }).join('') + '</div>';
+  });
+  return { title: '견적 항목 ' + its.length + '개', html: html };
+}
+function pqOpen(pid, iid) {
+  var p = pjOf(pid); if (!p) return; var i = (p.items || []).find(function (x) { return x.id === iid; }); if (!i) return;
+  var s = pqState(p, i), f = s.f, pay = f && f.pay, ck = pqCk(pid, iid);
+  var buy = pay ? (+(pay.baseAmount || pay.received) || 0) : 0, gross = +i.total || 0;
+  var idx = pqItems(p).indexOf(i) + 1;
+  var steps = pay && pay.approval ? '<span class="pq-sq">' + APPROVAL_ORDER.map(function (r) { var a = pay.approval[r], c = a && a.status === 'approved' ? 'g' : a && a.status === 'rejected' ? 'r' : (mpStep(pay.approval) === r ? 'o' : ''); return '<span class="' + c + '">' + String(APPROVAL_LABELS[r] || '').charAt(0) + '</span>'; }).join('<i>›</i>') + '</span>' : '<span class="muted">요청 전</span>';
+  var tel = pay && pay.contact ? String(pay.contact).replace(/[^0-9+]/g, '') : '';
+  var body = '<div class="pq-sub">' + esc(pqCat(i)) + ' · 견적서 ' + idx + '번째 항목</div>' +
+    '<div class="pq-grid"><div>수량<b>' + esc(i.qty != null ? i.qty + (i.unit || (i.qty === 1 ? '식' : '')) : '-') + '</b></div><div>일수<b>' + esc(i.days ? i.days + '일' : '-') + '</b></div><div>단가<b>' + (i.unitPrice ? Math.round(i.unitPrice).toLocaleString('ko-KR') : '-') + '</b></div></div>' +
+    '<div class="pq-row"><span>견적 금액</span><b>' + won(gross) + '</b></div>' +
+    (pay ? '<div class="pq-row"><span>매입 금액</span><b>' + won(buy) + '</b></div><div class="pq-row"><span>마진</span><b style="color:' + (gross - buy >= 0 ? 'var(--green)' : 'var(--red)') + '">' + won(gross - buy) + (gross ? ' · ' + ((gross - buy) / gross * 100).toFixed(1) + '%' : '') + '</b></div>' : '') +
+    '<div class="pq-row"><span>결재</span>' + steps + '</div>' +
+    '<div class="pq-row"><span>상태</span><span class="pq-pill ' + s.c + '" style="margin:0">' + esc(s.t) + '</span></div>' +
+    (pay && (pay.company || pay.person) ? '<div class="pq-vend"><div class="av">' + esc(String(pay.company || pay.person).charAt(0)) + '</div><div style="flex:1;min-width:0"><b>' + esc([pay.company, pay.person].filter(Boolean).join(' · ')) + '</b><small>' + esc([pay.contact, pay.taxMode === 'vat' ? '세금계산서' : pay.taxMode === 'w33' ? '3.3% 원천징수' : ''].filter(Boolean).join(' · ')) + '</small></div>' + (tel ? '<a class="call" href="tel:' + esc(tel) + '" onclick="event.stopPropagation()"><svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1z"/></svg></a>' : '') + '</div>' : '') +
+    ((i.note || (pay && pay.memo)) ? '<div class="pq-memo">📝 ' + esc([i.note, pay && pay.memo].filter(Boolean).join(' / ')) + '</div>' : '') +
+    (ck ? '<div class="pq-done">✓ 현장 체크 · ' + esc(ck.by || '') + ' · ' + esc(new Date(ck.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })) + '</div>' : '');
+  var foot = (f ? '<button class="btn" onclick="closeSheet(true);go(\'payd/' + pid + '/' + encodeURIComponent(f.key) + '\')">페이먼트 보기</button>' : '') +
+    '<button class="btn ' + (ck ? '' : 'pri') + '" onclick="pqToggle(\'' + pid + '\',\'' + esc(iid) + '\')">' + (ck ? '현장 체크 풀기' : '✓ 현장 체크 완료') + '</button>';
+  openSheet(i.name || '견적 항목', body, foot);
+}
+(function () {
+  var st = document.createElement('style'); st.id = 'pq-style';
+  st.textContent = [
+    '.pq-hero{background:linear-gradient(120deg,#111 0%,#16233d 55%,#009BDF 100%);color:#fff;border-radius:18px;padding:18px}',
+    '.pq-hero .l{font-size:12.5px;color:#b6c2d4;font-weight:600}.pq-hero .v{font-size:29px;font-weight:900;letter-spacing:-.02em;margin:4px 0 2px}.pq-hero .v small{font-size:15px;margin-left:3px}',
+    '.pq-hero .s{font-size:12.5px;color:#cfd8e6}.pq-hero .kv3{display:grid;grid-template-columns:1fr 1fr 1fr;margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.15)}',
+    '.pq-hero .kv3 div{font-size:11.5px;color:#b6c2d4;font-weight:600}.pq-hero .kv3 b{display:block;color:#fff;font-size:15px;margin-top:3px}.pq-hero .kv3 b.up{color:#6ee7a8}.pq-hero .kv3 b.dn{color:#fca5a5}',
+    '.pq-hero .ver{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12px;color:#cfd8e6}.pq-hero .chip{padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:700;background:rgba(255,255,255,.14)}',
+    '.pq-btns{display:flex;gap:8px}.pq-btns .btn{flex:1;height:46px;justify-content:center}',
+    '.pq-ic{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;margin-right:2px}',
+    '.pq-bar{height:5px;border-radius:9px;background:#eef0f4;margin-top:7px;overflow:hidden;width:100%}.pq-bar i{display:block;height:100%;background:var(--marple);border-radius:9px}',
+    '.pq-amt{text-align:right;white-space:nowrap;margin-left:8px}.pq-amt b{font-size:14.5px;font-weight:800}.pq-amt small{display:block;font-size:11.5px;color:var(--ink3,#8a94a6);font-weight:600;margin-top:2px}',
+    '.pq-srch{display:flex;align-items:center;gap:8px;background:#fff;border:1.5px solid var(--line,#eaecf0);border-radius:12px;padding:0 12px;height:44px;color:#8a94a6}.pq-srch svg{width:18px;height:18px;flex-shrink:0}',
+    '.pq-srch input{flex:1;border:0;outline:0;font-size:15px;background:none;min-width:0;font-family:inherit}',
+    '.pq-chips{display:flex;gap:6px;margin-top:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}.pq-chips::-webkit-scrollbar{display:none}',
+    '.pq-chips button{padding:8px 12px;border-radius:999px;font-size:13px;font-weight:700;background:#fff;border:1px solid var(--line,#eaecf0);color:#475467;white-space:nowrap;font-family:inherit}',
+    '.pq-chips button.on{background:#16191f;color:#fff;border-color:#16191f}.pq-chips em{font-style:normal;color:var(--marple);margin-left:4px}.pq-chips button.on em{color:#7dd3fc}',
+    '.pq-catf{margin-top:10px;font-size:13px;font-weight:700;color:#475467;display:flex;align-items:center;gap:8px}.pq-catf button{border:0;background:#eef0f4;border-radius:8px;padding:4px 9px;font-size:12px;font-weight:700;color:#475467}',
+    '.pq-hint{font-size:12px;color:#8a94a6;margin:10px 4px 0}',
+    '.pq-grp{font-size:13px;font-weight:800;color:#475467;margin:2px 4px 8px;display:flex}.pq-grp span{margin-left:auto;color:#8a94a6;font-weight:700}',
+    '.pq-it{background:#fff;border-radius:14px;padding:13px 14px;margin-bottom:8px;display:flex;gap:11px;align-items:flex-start;cursor:pointer}',
+    '.pq-ck{width:26px;height:26px;border-radius:7px;border:2px solid #c9ced6;background:#fff;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;padding:0}.pq-ck.on{background:var(--green,#17803d);border-color:var(--green,#17803d)}',
+    '.pq-it .m{flex:1;min-width:0}.pq-it .m b{font-size:14.5px;font-weight:700;display:block}.pq-it .m small{display:block;font-size:12px;color:#8a94a6;margin-top:3px}.pq-it .m small.ckby{color:var(--green,#17803d);font-weight:600}',
+    '.pq-it .r{text-align:right;white-space:nowrap}.pq-it .r b{font-size:14.5px;font-weight:800}',
+    '.pq-pill{display:inline-block;margin-top:6px;padding:2px 8px;border-radius:7px;font-size:11px;font-weight:700}.pq-pill.g{background:#e7f6ec;color:#17803d}.pq-pill.o{background:#fff1e0;color:#c2410c}.pq-pill.x{background:#eef0f4;color:#8a94a6}.pq-pill.b{background:#e5f5fc;color:#007db8}.pq-pill.r{background:#fee4e2;color:#b42318}',
+    '.pq-sub{font-size:13px;color:#8a94a6;margin:-4px 0 12px}',
+    '.pq-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px}.pq-grid div{background:#f2f4f7;border-radius:12px;padding:10px 12px;font-size:11.5px;color:#8a94a6;font-weight:600}.pq-grid b{display:block;font-size:15px;color:#16191f;margin-top:3px}',
+    '.pq-row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #f2f4f7;font-size:14px}.pq-row>span:first-child{color:#8a94a6}',
+    '.pq-sq{display:inline-flex;align-items:center;gap:4px}.pq-sq span{width:23px;height:21px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:1px solid #c9ced6;color:#a3a9b5}.pq-sq span.g{background:#17803d;border-color:#17803d;color:#fff}.pq-sq span.o{background:#e8830c;border-color:#e8830c;color:#fff}.pq-sq span.r{background:#d92d20;border-color:#d92d20;color:#fff}.pq-sq i{font-style:normal;color:#a3a9b5;font-size:11px}',
+    '.pq-vend{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid #eaecf0;border-radius:14px;margin:14px 0 10px}.pq-vend .av{width:38px;height:38px;border-radius:50%;background:#e5f5fc;color:#007db8;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}',
+    '.pq-vend b{font-size:14.5px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pq-vend small{font-size:12.5px;color:#8a94a6}.pq-vend .call{width:42px;height:42px;border-radius:12px;background:#17803d;display:flex;align-items:center;justify-content:center;flex-shrink:0}',
+    '.pq-memo{background:#fffbeb;border-radius:12px;padding:11px 12px;font-size:13px;color:#92400e;line-height:1.5;margin:10px 0}',
+    '.pq-done{background:#e7f6ec;color:#17803d;border-radius:12px;padding:10px 12px;font-size:13px;font-weight:700;margin-top:10px}',
+    'body.pq-on #rn-fab{display:none!important}',
+    '.pq-entry{display:flex;align-items:center;gap:12px;background:#fff;border-radius:16px;padding:14px 16px;width:100%;border:0;text-align:left;font-family:inherit}',
+    '.pq-entry .ic{width:42px;height:42px;border-radius:12px;background:#e5f5fc;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}',
+    '.pq-entry b{font-size:15px;display:block}.pq-entry small{font-size:12.5px;color:#8a94a6}.pq-entry .go{margin-left:auto;color:var(--marple);font-weight:700;font-size:13.5px;white-space:nowrap}'
+  ].join('\n');
+  document.head.appendChild(st);
+})();
+// 프로젝트 화면에 [견적서 · 현장 체크] 입구
+(function () {
+  var _v = vProject;
+  vProject = function (id) {
+    var out = _v.apply(this, arguments), p = pjOf(id);
+    try {
+      if (p && out && out.html && pqItems(p).length) {
+        var S = pqSums(p);
+        var entry = '<div class="sec"><button class="pq-entry" onclick="go(\'pq/' + p.id + '\')"><span class="ic">📄</span><div style="min-width:0"><b>견적서 · 현장 체크</b><small>' + Math.round(S.grand).toLocaleString('ko-KR') + '원 · 항목 ' + S.its.length + '개 · 체크 ' + S.cks + '/' + S.its.length + '</small></div><span class="go">보기 &gt;</span></button></div>';
+        var j = out.html.indexOf('</div></div>', out.html.indexOf('class="dhead"'));
+        var k = out.html.indexOf('<div class="sec">', out.html.indexOf('class="dhead"'));
+        out.html = k >= 0 ? out.html.slice(0, k) + entry + out.html.slice(k) : out.html + entry;
+      }
+    } catch (e) { console.warn('견적서 입구', e); }
+    return out;
+  };
+})();
+
+function pqBodyFlag() { document.body.classList.toggle('pq-on', /^#pqi?\//.test(location.hash)); }
+window.addEventListener('hashchange', pqBodyFlag); pqBodyFlag();
 
 </script>
 </body>

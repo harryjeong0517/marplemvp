@@ -13625,7 +13625,7 @@ function sbVenueWrite(d) { try { localStorage.setItem('marple_venue_data_v2', JS
 // ════ 70차 — 동기화 안전장치 ════
 // ① 목록 데이터(프로젝트·업무 등)는 0개가 돼도 "목록"으로 유지 — 저장 방식이 바뀌며 다른 PC와 엇갈려 지워지던 문제 차단
 // ② 한 번에 많은 문서를 지우는 저장은 서버에 올리지 않고 서버 내용으로 다시 맞춤
-var SB_LISTS = ['projects', 'tasks', 'users', 'teams', 'depts', 'clients', 'notifications', 'calEvents', 'leaveRequests', 'library', 'vendors', 'vendorReviews', 'pushSubs'];
+var SB_LISTS = ['projects', 'tasks', 'users', 'teams', 'depts', 'clients', 'notifications', 'calEvents', 'leaveRequests', 'library', 'vendors', 'vendorReviews', 'pushSubs', 'qchecks'];
 function sbIsList(k) { return SB_LISTS.indexOf(k) >= 0 || !!(SB.kinds && SB.kinds[k]); }
 function sbFixLists() { SB_LISTS.forEach(function (k) { if (!Array.isArray(DB[k])) DB[k] = []; }); }
 function sbGuardDeletes(rows) {
@@ -20881,9 +20881,9 @@ function rnIcon(k) { return '<svg class="nav-icon rn-ni" viewBox="0 0 16 16" fil
 // 탭 key: 'page' = navigate(page), 'v:view' = navVenue(view)
 var RN_GROUPS = [
   { id: 'home', label: '홈', icon: 'home', tabs: [['dashboard', '대시보드']] },
-  { id: 'projects', label: '프로젝트', icon: 'proj', tabs: [['projects', '프로젝트 목록']], also: ['project-detail', 'quote'] },
+  { id: 'projects', label: '프로젝트', icon: 'proj', tabs: [['projects', '프로젝트 목록'], ['quotes', '견적서']], also: ['project-detail', 'quote'] },
   { id: 'inbox', label: '결재함', icon: 'ok', tabs: [['inbox', '내 결재 대기', 'rn:inbox'], ['payments', '페이먼트 결재', 'pay-badge']] },
-  { id: 'settle', label: '정산', icon: 'won', tabs: [['quotes', '견적서'], ['settlement', '페이먼트 정산서'], ['quick', '퀵 정산'], ['analytics', '매출 분석'], ['mreport', '월간 리포트', '', 'report'], ['vstats', '지급업체 분석', '', 'report'], ['payplan', '지급 일정', 'pp-badge', 'payplan']] },
+  { id: 'settle', label: '정산', icon: 'won', tabs: [['settlement', '페이먼트 정산서'], ['quick', '퀵 정산'], ['analytics', '매출 분석'], ['mreport', '월간 리포트', '', 'report'], ['vstats', '지급업체 분석', '', 'report'], ['payplan', '지급 일정', 'pp-badge', 'payplan']] },
   { id: 'acct', label: '인력 · 원천징수', icon: 'won', tabs: [['acct', '인력 · 원천징수', '', 'acct']] },
   { id: 'work', cat: 'ws', label: '일정 · 업무', icon: 'cal', tabs: [['mcal', '마플캘린더'], ['board', '협업 보드', 'bd-nav-cnt']] },
   { id: 'partners', cat: 'ws', label: '거래처', icon: 'biz', tabs: [['clients', '🤝 클라이언트'], ['v:venues', '베뉴'], ['v:partners', '파트너사'], ['vendors', '지급 업체'], ['v:contacts', '담당자 연락처', 'vn-cnt-chk']],
