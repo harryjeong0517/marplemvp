@@ -2661,7 +2661,7 @@ var ROOTS = { home: 1, board: 1, chat: 1, projects: 1, venues: 1, more: 1 };
 // ── 라우터 ──
 function go(h) { if (location.hash === '#' + h) render(); else location.hash = h; }
 function back() { if (history.length > 1 && M._nav > 0) history.back(); else go(curRoot()); }
-function curRoot() { var r = (location.hash.slice(1) || 'home').split('/')[0]; return ROOTS[r] ? r : ({ room: 'chat', cal: 'home', pay: 'more', payd: 'more', task: 'board', project: 'projects', pq: 'projects', pqi: 'projects', venue: 'venues', partner: 'venues', lib: 'more', leave: 'more', noti: 'home' }[r] || 'home'); }
+function curRoot() { var r = (location.hash.slice(1) || 'home').split('/')[0]; return ROOTS[r] ? r : ({ room: 'chat', cal: 'home', pay: 'more', payd: 'more', task: 'board', project: 'projects', pq: 'projects', pqi: 'projects', clients: 'projects', client: 'projects', venue: 'venues', partner: 'venues', lib: 'more', leave: 'more', noti: 'home' }[r] || 'home'); }
 window.addEventListener('hashchange', function () { M._nav = (M._nav || 0) + 1; if (SHEET.open) closeSheet(true); render(true); });
 function render(nav) {
   if (!me) return;
@@ -2682,6 +2682,8 @@ function render(nav) {
     else if (r === 'project') out = vProject(arg);
     else if (r === 'pq') out = vPQ(arg);
     else if (r === 'pqi') out = vPQI(arg);
+    else if (r === 'clients') out = vClients();
+    else if (r === 'client') out = vClient(arg);
     else if (r === 'venues') out = vVenues();
     else if (r === 'venue') out = vVenue(arg);
     else if (r === 'partner') out = vPartner(arg);
@@ -3505,6 +3507,8 @@ render = function (nav) {
     else if (r === 'project') out = vProject(arg);
     else if (r === 'pq') out = vPQ(arg);
     else if (r === 'pqi') out = vPQI(arg);
+    else if (r === 'clients') out = vClients();
+    else if (r === 'client') out = vClient(arg);
     else if (r === 'venues') out = vVenues();
     else if (r === 'venue') out = vVenue(arg);
     else if (r === 'partner') out = vPartner(arg);
@@ -5493,6 +5497,176 @@ function pqOpen(pid, iid) {
 
 function pqBodyFlag() { document.body.classList.toggle('pq-on', /^#pqi?\//.test(location.hash)); }
 window.addEventListener('hashchange', pqBodyFlag); pqBodyFlag();
+
+</script>
+<script>
+// ════ 73차 — 모바일 클라이언트 탭 ════
+UI.cl = { q: '', sort: 'recent' };
+var CLM_COLORS = ['#e2445c', '#1d4ed8', '#7e22ce', '#0ea5a4', '#d97706', '#0284c7', '#15803d', '#be185d', '#4f46e5', '#b45309'];
+function clmHash(n) { var h = 0; String(n).split('').forEach(function (c) { h = (h * 31 + c.charCodeAt(0)) >>> 0; }); return CLM_COLORS[h % CLM_COLORS.length]; }
+function clmAbbr(n) { n = String(n || '').replace(/^\(주\)|㈜|주식회사/g, '').trim(); var en = n.match(/[A-Za-z]+/g); if (en && /^[A-Za-z]/.test(n)) return (en.length > 1 ? en[0][0] + en[1][0] : en[0].slice(0, 2)).toUpperCase(); return n.slice(0, 1); }
+function clmDate(p) { return p.eventStart || p.endDate || p.startDate || ''; }
+function clmMoneyOK() { return me && (me.role === 'admin' || perms().companyTotal); }
+function clmIcon(name, size) {
+  size = size || 42;
+  var bg = (typeof hmBrandGrad === 'function' && hmBrandGrad(name)) || clmHash(name), lg = typeof hmBrandLogo === 'function' ? hmBrandLogo(name) : '';
+  return '<span class="clm-ic" style="width:' + size + 'px;height:' + size + 'px;background:' + bg + ';font-size:' + Math.round(size * .38) + 'px">' +
+    (lg ? '<img src="' + esc(lg) + '" alt="" onerror="this.parentNode.textContent=\'' + esc(clmAbbr(name)).replace(/'/g, '') + '\'">' : esc(clmAbbr(name))) + '</span>';
+}
+function clmAll() {
+  var map = [];
+  projects().forEach(function (p) {
+    if (!p.client) return;
+    var g = map.find(function (x) { return clKeyM(x.name) === clKeyM(p.client) || (clRec(x.name) && clRec(x.name) === clRec(p.client)); });
+    if (!g) { var r = clRec(p.client); g = { name: r ? r.name : p.client, projects: [] }; map.push(g); }
+    g.projects.push(p);
+  });
+  (DB.clients || []).forEach(function (c) { if (c && c.name && !map.some(function (x) { return clKeyM(x.name) === clKeyM(c.name); })) map.push({ name: c.name, projects: [] }); });
+  var t = iso(new Date());
+  return map.map(function (g) {
+    g.projects.sort(function (a, b) { return clmDate(b).localeCompare(clmDate(a)); });
+    g.rec = clRec(g.name) || {};
+    g.rev = g.projects.reduce(function (s, p) { return s + pjRevenue(p); }, 0);
+    g.cost = g.projects.reduce(function (s, p) { return s + pjPurchase(p) + pjCard(p); }, 0);
+    g.live = g.projects.filter(function (p) { return p.status !== '완료' && (clmDate(p) >= t || p.status === '진행중'); }).length;
+    g.last = g.projects[0] ? clmDate(g.projects[0]) : '';
+    g.owner = g.projects[0] ? g.projects[0].manager || '' : '';
+    return g;
+  });
+}
+function clmSeg(on) {
+  return '<div class="sec" style="margin-top:12px"><div class="seg"><button class="' + (on === 'pj' ? 'on' : '') + '" onclick="go(\'projects\')">프로젝트</button><button class="' + (on === 'cl' ? 'on' : '') + '" onclick="go(\'clients\')">클라이언트</button></div></div>';
+}
+var _clmProjects = vProjects;
+vProjects = function () { var o = _clmProjects.apply(this, arguments); o.html = clmSeg('pj') + o.html; return o; };
+
+function vClients() {
+  var U = UI.cl, q = (U.q || '').trim(), all = clmAll(), money = clmMoneyOK();
+  var list = all.filter(function (c) { return !q || clKeyM(c.name + ' ' + ((c.rec.aliases || []).join(' ')) + ' ' + (c.rec.contacts || []).map(function (x) { return x.name; }).join(' ')).indexOf(clKeyM(q)) >= 0; });
+  list.sort(U.sort === 'rev' && money ? function (a, b) { return b.rev - a.rev; } : U.sort === 'name' ? function (a, b) { return a.name.localeCompare(b.name, 'ko'); } : function (a, b) { return String(b.last).localeCompare(String(a.last)) || a.name.localeCompare(b.name, 'ko'); });
+  var html = clmSeg('cl') + '<div class="tools"><div class="search">' + IC.search + '<input type="search" placeholder="회사명 · 담당자 이름 검색" value="' + esc(U.q) + '" oninput="UI.cl.q=this.value;imeSafeRender(\'view\',this,render)"></div>' +
+    '<div class="chips">' + [['recent', '최근 행사순'], money ? ['rev', '매출순'] : null, ['name', '가나다순']].filter(Boolean).map(function (c) { return '<button class="chip' + (U.sort === c[0] ? ' on' : '') + '" onclick="UI.cl.sort=\'' + c[0] + '\';render()">' + c[1] + '</button>'; }).join('') + '</div></div>';
+  html += '<div class="sec clm-sum"><span>클라이언트 <b>' + all.length + '</b>곳</span><span>진행 중 행사 <b>' + all.reduce(function (s, c) { return s + c.live; }, 0) + '</b>건</span></div>';
+  html += list.length ? '<div class="list clm-list">' + list.map(function (c) {
+    var ct = (c.rec.contacts || []).length;
+    return '<button class="row" onclick="go(\'client/' + encodeURIComponent(c.name) + '\')">' + clmIcon(c.name) +
+      '<div class="main"><div class="t">' + esc(c.name) + (c.rec.vip ? ' <span class="clm-vip">VIP</span>' : '') + '</div><div class="s">' +
+      '<span>프로젝트 ' + c.projects.length + '</span>' + (c.live ? '<span style="color:var(--marple);font-weight:700">진행 ' + c.live + '</span>' : '') + (ct ? '<span>담당자 ' + ct + '</span>' : '') + (c.last ? '<span>' + esc(c.last.replace(/-/g, '.').slice(2)) + '</span>' : '') + '</div></div>' +
+      (money && c.rev ? '<b class="clm-rev">' + wonShort(c.rev) + '</b>' : '') + '<span class="chev">' + IC.chev + '</span></button>';
+  }).join('') + '</div>' : emptyBox(q ? '검색 결과가 없어요' : '클라이언트가 없어요', '프로젝트를 만들거나 명함을 스캔하면 생겨요');
+  html += '<div class="sec"><button class="btn block" style="background:var(--card)" onclick="clmAddSheet()">' + IC.plus.replace('<svg', '<svg width="18" height="18"') + '클라이언트 추가</button></div>';
+  return { title: '클라이언트', html: html };
+}
+
+function vClient(name) {
+  var c = clmAll().find(function (x) { return clKeyM(x.name) === clKeyM(name); });
+  if (!c) return { title: '클라이언트', html: '<div class="empty"><b>클라이언트를 찾을 수 없어요</b>이름이 바뀌었거나 지워졌어요.</div>' };
+  var r = c.rec, nm = esc(c.name).replace(/'/g, '&#39;'), money = clmMoneyOK();
+  var bg = (typeof hmBrandGrad === 'function' && hmBrandGrad(c.name)) || 'linear-gradient(135deg,' + clmHash(c.name) + ',#0f1a2e)';
+  var home = r.home ? (/^https?:/i.test(r.home) ? r.home : 'https://' + r.home) : '';
+  var html = '<div class="clm-hero" style="background:' + bg + '">' + clmIcon(c.name, 52) +
+    '<div style="min-width:0;flex:1"><h1>' + esc(c.name) + '</h1><p>' + esc([r.industry, r.bizNo ? '사업자 ' + r.bizNo : ''].filter(Boolean).join(' · ') || '업종 · 사업자번호는 PC에서 넣을 수 있어요') + '</p></div></div>';
+  if (r.address || home) html += '<div class="sec"><div class="list">' +
+    (r.address ? '<a class="row" href="https://map.naver.com/v5/search/' + encodeURIComponent(r.address) + '" target="_blank" rel="noopener"><span class="ic" style="background:#eef0f4">📍</span><div class="main"><div class="t" style="font-weight:500">' + esc(r.address) + '</div></div><span class="chev">' + IC.chev + '</span></a>' : '') +
+    (home ? '<a class="row" href="' + esc(home) + '" target="_blank" rel="noopener"><span class="ic" style="background:#eef0f4">🌐</span><div class="main"><div class="t" style="font-weight:500">' + esc(r.home) + '</div></div><span class="chev">' + IC.chev + '</span></a>' : '') + '</div></div>';
+  html += '<div class="sec"><div class="money"><div><small>프로젝트</small><b>' + c.projects.length + '건</b></div><div><small>진행 중</small><b style="color:var(--marple)">' + c.live + '건</b></div>' +
+    (money ? '<div><small>누적 매출</small><b>' + wonShort(c.rev) + '</b></div>' : '<div><small>최근 담당</small><b style="font-size:15px">' + esc(c.owner || '-') + '</b></div>') + '</div>' +
+    (money && c.rev ? '<div class="small muted" style="margin:6px 4px 0">이익률 ' + Math.round((c.rev - c.cost) / c.rev * 100) + '% · 최근 담당 ' + esc(c.owner || '-') + '</div>' : '') + '</div>';
+  var ct = r.contacts || [];
+  html += '<div class="sec"><div class="clm-h">담당자 <em>' + ct.length + '</em><button onclick="clmContactSheet(\'' + nm + '\',-1)">+ 추가</button></div>' +
+    (ct.length ? '<div class="list">' + ct.map(function (x, i) {
+      var tel = String(x.phone || '').replace(/[^\d+]/g, '');
+      return '<div class="row clm-ct"><div class="main" onclick="clmContactSheet(\'' + nm + '\',' + i + ')"><div class="t">' + esc(x.name) + ' <span class="muted" style="font-weight:500">' + esc([x.title, x.dept].filter(Boolean).join(' · ')) + '</span></div><div class="s">' + (x.phone ? '<span>' + esc(x.phone) + '</span>' : '') + (x.email ? '<span>' + esc(x.email) + '</span>' : '') + (x.role ? '<span class="tag">' + esc(x.role) + '</span>' : '') + '</div></div>' +
+        (x.email ? '<a class="clm-btn" href="mailto:' + esc(x.email) + '" aria-label="메일">✉</a>' : '') + (tel ? '<a class="clm-btn call" href="tel:' + esc(tel) + '" aria-label="전화">' + '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M6.6 10.8a15.2 15.2 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg></a>' : '') + '</div>';
+    }).join('') + '</div>' : emptyBox('등록된 담당자가 없어요', '더보기 → 명함 스캔으로도 넣을 수 있어요')) + '</div>';
+  var mm = (r.memos || []).slice().reverse();
+  html += '<div class="sec"><div class="clm-h">메모 <em>' + mm.length + '</em><button onclick="clmMemoSheet(\'' + nm + '\')">+ 메모</button></div>' +
+    (mm.length ? '<div class="list">' + mm.slice(0, 5).map(function (m) { return '<div class="row"><div class="main"><div class="t" style="font-weight:500;white-space:pre-wrap">' + esc(m.text) + '</div><div class="s"><span>' + esc(m.by || '') + '</span><span>' + esc(String(m.at || '').slice(0, 10).replace(/-/g, '.')) + '</span></div></div></div>'; }).join('') + '</div>' : emptyBox('메모가 없어요', '담당자 성향, 선호하는 진행 방식 등을 남겨 두세요')) + '</div>';
+  html += '<div class="sec"><div class="clm-h">프로젝트 <em>' + c.projects.length + '</em></div>' +
+    (c.projects.length ? '<div class="list">' + c.projects.map(function (p) {
+      var sc = p.status === '완료' ? 'ok' : p.status === '대기' ? 'wait' : 'mid';
+      return '<button class="row" onclick="go(\'project/' + p.id + '\')"><div class="main"><div class="t">' + esc(p.name) + '</div><div class="s"><span>' + esc(clmDate(p).replace(/-/g, '.')) + '</span><span>' + esc(p.manager || '') + '</span>' + (canSeeMoney(p) && pjRevenue(p) ? '<span>' + wonShort(pjRevenue(p)) + '</span>' : '') + '</div></div><span class="badge ' + sc + '">' + esc(p.status || '') + '</span></button>';
+    }).join('') + '</div>' : emptyBox('아직 프로젝트가 없어요')) + '</div>';
+  return { title: c.name, html: html };
+}
+
+function clmEnsure(name) {
+  if (!Array.isArray(DB.clients)) DB.clients = [];
+  var c = clRec(name);
+  if (!c) { c = { id: uid('cl'), name: name, contacts: [], memos: [], tags: [] }; DB.clients.push(c); }
+  return c;
+}
+function clmField(id, l, v, ph, type) { return '<label class="clm-f"><span>' + l + '</span><input id="' + id + '" type="' + (type || 'text') + '" value="' + esc(v || '') + '" placeholder="' + esc(ph || '') + '"></label>'; }
+function clmContactSheet(name, i) {
+  var c = clRec(name) || {}, x = i >= 0 ? (c.contacts || [])[i] || {} : {}, nm = esc(name).replace(/'/g, '&#39;');
+  openSheet(i >= 0 ? '담당자 수정' : name + ' 담당자 추가',
+    clmField('cc-name', '이름 *', x.name, '홍길동') + clmField('cc-title', '직급', x.title, '과장') + clmField('cc-dept', '부서', x.dept, '마케팅팀') + clmField('cc-role', '역할', x.role, '실무 · 결정권자 등') + clmField('cc-phone', '전화', x.phone, '010-0000-0000', 'tel') + clmField('cc-email', '이메일', x.email, 'name@company.com', 'email'),
+    (i >= 0 ? '<button class="btn" style="color:var(--red)" onclick="clmContactSave(\'' + nm + '\',' + i + ',true)">삭제</button>' : '') + '<button class="btn pri" style="flex:1" onclick="clmContactSave(\'' + nm + '\',' + i + ')">저장</button>');
+}
+function clmContactSave(name, i, del) {
+  var c = clmEnsure(name); c.contacts = c.contacts || [];
+  if (del) { if (!confirm('이 담당자를 지울까요?')) return; c.contacts.splice(i, 1); }
+  else {
+    var v = function (id) { return (document.getElementById(id).value || '').trim(); }, x = { name: v('cc-name'), title: v('cc-title'), dept: v('cc-dept'), role: v('cc-role'), phone: v('cc-phone'), email: v('cc-email') };
+    if (!x.name) { toast('이름을 넣어 주세요', true); return; }
+    if (i >= 0) c.contacts[i] = Object.assign({}, c.contacts[i], x); else { x.addedBy = me.name; x.addedAt = nowIso(); c.contacts.push(x); }
+  }
+  putDoc('clients', c); closeSheet(); toast(del ? '담당자를 지웠어요' : '저장했어요'); render();
+}
+function clmMemoSheet(name) {
+  var nm = esc(name).replace(/'/g, '&#39;');
+  openSheet(name + ' 메모', '<textarea id="clm-memo" rows="5" class="clm-ta" placeholder="예) 담당자 바뀜 — 내년 행사는 3월에 결정"></textarea>', '<button class="btn pri" style="flex:1" onclick="clmMemoSave(\'' + nm + '\')">메모 남기기</button>');
+  setTimeout(function () { var t = document.getElementById('clm-memo'); if (t) t.focus(); }, 300);
+}
+function clmMemoSave(name) {
+  var t = (document.getElementById('clm-memo').value || '').trim(); if (!t) { toast('내용을 넣어 주세요', true); return; }
+  var c = clmEnsure(name); (c.memos = c.memos || []).push({ by: me.name, at: nowIso(), text: t });
+  putDoc('clients', c); closeSheet(); toast('메모를 남겼어요'); render();
+}
+function clmAddSheet() {
+  openSheet('클라이언트 추가', clmField('ca-name', '회사명 *', '', '예) 삼성전자') + clmField('ca-ind', '업종', '', 'IT · 제약 · 공공 등') + clmField('ca-home', '홈페이지', '', 'www.company.com') +
+    '<p class="small muted" style="margin:4px 2px 0">로고 · 브랜드 색은 PC 거래처 화면에서 홈페이지 주소로 자동으로 채워져요.</p>', '<button class="btn pri" style="flex:1" onclick="clmAddSave()">추가</button>');
+}
+function clmAddSave() {
+  var v = function (id) { return (document.getElementById(id).value || '').trim(); }, n = v('ca-name');
+  if (!n) { toast('회사명을 넣어 주세요', true); return; }
+  if (clRec(n) || projects().some(function (p) { return clKeyM(p.client) === clKeyM(n); })) { closeSheet(); go('client/' + encodeURIComponent((clRec(n) || {}).name || n)); toast('이미 있는 클라이언트예요'); return; }
+  var c = clmEnsure(n); if (v('ca-ind')) c.industry = v('ca-ind'); if (v('ca-home')) c.home = v('ca-home');
+  putDoc('clients', c); closeSheet(); toast(n + ' 추가했어요'); go('client/' + encodeURIComponent(n));
+}
+
+(function () {
+  var st = document.createElement('style'); st.id = 'clm-style';
+  st.textContent = [
+    '.clm-ic{flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:12px;color:#fff;font-weight:800;letter-spacing:-.02em;overflow:hidden;margin-right:12px}',
+    '.clm-ic img{width:62%;height:62%;object-fit:contain;filter:brightness(0) invert(1)}',
+    '.clm-list .row{align-items:center}',
+    '.clm-rev{font-size:14px;margin-right:4px;white-space:nowrap}',
+    '.clm-vip{display:inline-block;font-size:10.5px;font-weight:800;color:#b45309;background:#fff4e0;border-radius:5px;padding:1px 5px;vertical-align:2px}',
+    '.clm-sum{display:flex;gap:16px;font-size:13px;color:var(--muted);margin-top:4px}.clm-sum b{color:var(--ink,#111);font-size:14px}',
+    '.clm-hero{margin:12px 16px 4px;border-radius:18px;padding:20px 18px;display:flex;align-items:center;color:#fff;box-shadow:0 8px 24px rgba(15,26,46,.16)}',
+    '.clm-hero .clm-ic{background:rgba(255,255,255,.16)!important;border:1px solid rgba(255,255,255,.25)}',
+    '.clm-hero h1{font-size:20px;margin:0 0 4px;font-weight:800;letter-spacing:-.02em;word-break:keep-all}',
+    '.clm-hero p{margin:0;font-size:12.5px;opacity:.85;word-break:keep-all}',
+    '.clm-h{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:800;margin:6px 4px 8px}.clm-h em{font-style:normal;color:var(--marple)}',
+    '.clm-h button{margin-left:auto;font-size:13px;font-weight:700;color:var(--marple);background:none;border:0;padding:4px 2px}',
+    '.clm-ct .main{cursor:pointer}',
+    '.clm-btn{flex:none;width:38px;height:38px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:#eef0f4;color:#4b5563;margin-left:6px;text-decoration:none;font-size:16px}',
+    '.clm-btn.call{background:#00a862;color:#fff}',
+    '.clm-f{display:block;margin-bottom:10px}.clm-f span{display:block;font-size:12.5px;color:var(--muted);font-weight:600;margin:0 2px 4px}',
+    '.clm-f input,.clm-ta{width:100%;box-sizing:border-box;border:1px solid var(--line,#e5e7eb);border-radius:12px;padding:12px;font-size:16px;font-family:inherit;background:var(--card,#fff)}'
+  ].join('\n');
+  document.head.appendChild(st);
+})();
+var _clmMore = vMore;
+vMore = function () {
+  var out = _clmMore.apply(this, arguments);
+  var row = '<button class="row" onclick="go(\'clients\')"><span class="ic" style="background:#e3ebff;color:#1d4ed8">🏢</span><div class="main"><div class="t" style="font-weight:600">클라이언트</div></div><span class="chev">' + IC.chev + '</span></button>';
+  var k = out.html.indexOf('<button class="row" onclick="go(\'pay\')"');
+  if (k >= 0) out.html = out.html.slice(0, k) + row + out.html.slice(k);
+  out.html = out.html.replace('견적서 · 정산 · 관리자 메뉴는', '정산 · 관리자 메뉴는');
+  return out;
+};
 
 </script>
 </body>
