@@ -929,8 +929,12 @@ function listFor(coll) {
   if (coll.indexOf('v_') === 0) { var sh = coll.slice(2); if (!Array.isArray(V[sh])) V[sh] = []; return V[sh]; }
   if (!Array.isArray(DB[coll])) DB[coll] = []; return DB[coll];
 }
+// 70차: 목록 데이터(프로젝트·업무 등)는 서버에 예전 형식 값이 남아 있어도 항상 목록으로
+var M_LISTS = ['projects', 'tasks', 'users', 'teams', 'depts', 'clients', 'notifications', 'calEvents', 'leaveRequests', 'library', 'vendors', 'vendorReviews', 'pushSubs'];
+function fixLists() { M_LISTS.forEach(function (k) { if (!Array.isArray(DB[k])) DB[k] = []; }); }
 function applyRow(r) {
   var key = r.coll + '|' + r.id;
+  if (r.coll === '_kv' && M_LISTS.indexOf(r.id) >= 0 && !(Array.isArray(r.data) && r.data.length && !(DB[r.id] || []).length)) { if (r.deleted) delete BASE[key]; else BASE[key] = canon(r.data); return; }
   if (r.coll === '_kind') { if (!r.deleted) { KIND[r.id] = 1; if (!Array.isArray(DB[r.id])) DB[r.id] = []; } return; }
   if (M.queue.some(function (q) { return q.coll + '|' + q.id === key; })) return; // 아직 못 올린 내 수정이 있으면 내 것이 우선 (올릴 때 서버에서 칸별로 합쳐짐)
   if (r.deleted) delete BASE[key]; else BASE[key] = canon(r.data);
@@ -950,7 +954,7 @@ function saveCache() {
   catch (e) { try { localStorage.removeItem(M_CACHE); } catch (x) {} }
 }
 function loadCache() {
-  try { var c = JSON.parse(localStorage.getItem(M_CACHE) || 'null'); if (!c || !c.DB) return false; DB = c.DB; V = c.V || {}; ORD = c.ORD || {}; BASE = c.BASE || {}; KIND = c.KIND || {}; M.lastTs = c.lastTs; M.loaded = true; return true; } catch (e) { return false; }
+  try { var c = JSON.parse(localStorage.getItem(M_CACHE) || 'null'); if (!c || !c.DB) return false; DB = c.DB; fixLists(); V = c.V || {}; ORD = c.ORD || {}; BASE = c.BASE || {}; KIND = c.KIND || {}; M.lastTs = c.lastTs; M.loaded = true; return true; } catch (e) { return false; }
 }
 function loadQueue() { try { M.queue = JSON.parse(localStorage.getItem(M_QUEUE) || '[]') || []; } catch (e) { M.queue = []; } }
 function saveQueue() { try { localStorage.setItem(M_QUEUE, JSON.stringify(M.queue)); } catch (e) {} }
@@ -965,7 +969,7 @@ function boot() {
     if (full) { DB = {}; V = {}; ORD = {}; BASE = {}; KIND = {}; }
     rows.forEach(function (r) { if (r.coll === '_kind' && !r.deleted) KIND[r.id] = 1; });
     rows.forEach(function (r) { if (!M.lastTs || r.updated_at > M.lastTs) M.lastTs = r.updated_at; applyRow(r); });
-    sortLists(); M.loaded = true; M.state = 'ok'; M.err = ''; M.okAt = new Date();
+    fixLists(); sortLists(); M.loaded = true; M.state = 'ok'; M.err = ''; M.okAt = new Date();
     saveCache(); syncUI(); flush();
     return rows.length;
   }).catch(function (e) {
@@ -983,7 +987,7 @@ function poll(force) {
     if (!rows.length) { syncUI(); return; }
     rows.forEach(function (r) { if (r.coll === '_kind' && !r.deleted) KIND[r.id] = 1; });
     rows.forEach(function (r) { if (!M.lastTs || r.updated_at > M.lastTs) M.lastTs = r.updated_at; applyRow(r); });
-    sortLists(); saveCache(); syncUI();
+    fixLists(); sortLists(); saveCache(); syncUI();
     if (me) { var u = (DB.users || []).find(function (x) { return x.id === me.id; }); if (u) me = u; }
     if (typeof onRemote === 'function') onRemote();
   }).catch(function (e) { M._polling = false; M.state = 'off'; M.err = e.message || String(e); syncUI(); });

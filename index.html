@@ -13622,11 +13622,33 @@ function sbVenueData() {
 function sbVenueWrite(d) { try { localStorage.setItem('marple_venue_data_v2', JSON.stringify(d)); } catch (e) { console.warn('venue cache', e); } }
 
 // ── 지금 데이터 → 서버 문서 목록 ──
+// ════ 70차 — 동기화 안전장치 ════
+// ① 목록 데이터(프로젝트·업무 등)는 0개가 돼도 "목록"으로 유지 — 저장 방식이 바뀌며 다른 PC와 엇갈려 지워지던 문제 차단
+// ② 한 번에 많은 문서를 지우는 저장은 서버에 올리지 않고 서버 내용으로 다시 맞춤
+var SB_LISTS = ['projects', 'tasks', 'users', 'teams', 'depts', 'clients', 'notifications', 'calEvents', 'leaveRequests', 'library', 'vendors', 'vendorReviews', 'pushSubs'];
+function sbIsList(k) { return SB_LISTS.indexOf(k) >= 0 || !!(SB.kinds && SB.kinds[k]); }
+function sbFixLists() { SB_LISTS.forEach(function (k) { if (!Array.isArray(DB[k])) DB[k] = []; }); }
+function sbGuardDeletes(rows) {
+  // 목록 표시(_kind)는 절대 지우지 않음
+  rows = rows.filter(function (r) { return !(r.coll === '_kind' && r.deleted && sbIsList(r.id)); });
+  if (window.SB_ALLOW_MASS) return rows;
+  var del = {}, have = {};
+  Object.keys(SB.hashes).forEach(function (k) { var p = k.indexOf('|'), c = k.slice(0, p); if (SB.hashes[k] !== 'DEL' && c !== '_kv' && c !== '_kind') have[c] = (have[c] || 0) + 1; });
+  rows.forEach(function (r) { if (r.deleted && r.coll !== '_kv' && r.coll !== '_kind') del[r.coll] = (del[r.coll] || 0) + 1; });
+  var bad = {};
+  Object.keys(del).forEach(function (c) { var d = del[c], n = have[c] || 0; if ((d >= 5 && d >= n * 0.4) || (n >= 3 && d >= n)) bad[c] = d; });
+  if (!Object.keys(bad).length) return rows;
+  console.warn('[동기화 보호] 한 번에 많은 삭제를 막았어요', bad);
+  try { showToast('이 PC의 데이터가 서버와 어긋나 저장을 멈추고 서버 내용으로 다시 맞춰요', 'error'); } catch (e) {}
+  setTimeout(function () { SB.hashes = {}; SB.base = {}; sbBoot(); }, 300);
+  return rows.filter(function (r) { return !(r.deleted && bad[r.coll]); });
+}
 function sbDocs() {
-  var out = {};
+  var out = {}; sbFixLists();
   Object.keys(DB).forEach(function (k) {
     var v = DB[k];
     var byId = Array.isArray(v) && v.length && v.every(function (x) { return x && typeof x === 'object' && !Array.isArray(x) && x.id != null && x.id !== ''; });
+    if (!byId && sbIsList(k)) { (Array.isArray(v) ? v : []).forEach(function (x, i) { if (x && typeof x === 'object' && x.id != null && x.id !== '') out[k + '|' + String(x.id)] = { coll: k, id: String(x.id), json: sbDocJSON(x, i) }; }); out['_kind|' + k] = { coll: '_kind', id: k, json: '"list"' }; return; }
     if (byId) {
       var seen = {};
       v.forEach(function (x, i) {
@@ -13745,6 +13767,8 @@ function sbPush(force) {
     var docs = sbDocs(), rows = [], keys = [];
     Object.keys(docs).forEach(function (k) { var d = docs[k], h = sbHash(d.json); if (force || SB.hashes[k] !== h) { rows.push({ coll: d.coll, id: d.id, data: JSON.parse(d.json), deleted: false, updated_by: (currentUser && currentUser.name) || '', base: SB.base[k] && !force ? JSON.parse(SB.base[k]) : null }); keys.push([k, h, d.json]); } });
     Object.keys(SB.hashes).forEach(function (k) { if (!docs[k] && SB.hashes[k] !== 'DEL') { var p = k.indexOf('|'); rows.push({ coll: k.slice(0, p), id: k.slice(p + 1), data: null, deleted: true, updated_by: (currentUser && currentUser.name) || '' }); keys.push([k, 'DEL']); } });
+    var nb = rows.length; rows = sbGuardDeletes(rows);
+    if (rows.length !== nb) { var okk = {}; rows.forEach(function (r) { okk[r.coll + '|' + r.id] = 1; }); keys = keys.filter(function (x) { return okk[x[0]]; }); }
     if (!rows.length) return 0;
     var batches = [], cur = [], size = 0;
     rows.forEach(function (r) { var s = JSON.stringify(r).length; if (cur.length && (size + s > 4000000 || cur.length >= 200)) { batches.push(cur); cur = []; size = 0; } cur.push(r); size += s; });
@@ -13790,7 +13814,8 @@ function sbInPlace(target, src) { Object.keys(target).forEach(function (k) { if 
 function sbApplyRow(r, vd) {
   var key = r.coll + '|' + r.id;
   var s = sbStrip(r.data);
-  if (r.coll === '_kind') return null;
+  if (r.coll === '_kind') { if (!r.deleted) { SB.kinds = SB.kinds || {}; SB.kinds[r.id] = 1; if (!Array.isArray(DB[r.id])) DB[r.id] = []; } return null; }
+  if (r.coll === '_kv' && sbIsList(r.id)) { if (!r.deleted && Array.isArray(s.v) && s.v.length && !(DB[r.id] || []).length) { DB[r.id] = s.v; return 'erp'; } return null; }
   if (r.coll === '_kv') { if (r.deleted) delete DB[r.id]; else DB[r.id] = s.v; return 'erp'; }
   if (r.coll.indexOf('v_') === 0) {
     var sh = r.coll.slice(2); if (!vd) return null; vd[sh] = vd[sh] || [];
@@ -13836,11 +13861,12 @@ function sbBoot() {
     sbSortByOrder(live).forEach(function (r) {
       var s = sbStrip(r.data);
       if (r.coll === '_kind') return;
-      if (r.coll === '_kv') { fresh[r.id] = s.v; return; }
+      if (r.coll === '_kv') { if (sbIsList(r.id) && !(Array.isArray(s.v) && s.v.length)) return; fresh[r.id] = s.v; return; }
       if (r.coll.indexOf('v_') === 0) { (venue[r.coll.slice(2)] = venue[r.coll.slice(2)] || []).push(s.v); return; }
       (fresh[r.coll] = fresh[r.coll] || []).push(s.v);
     });
-    Object.keys(kinds).forEach(function (k) { if (!fresh[k]) fresh[k] = []; });
+    SB.kinds = Object.assign(SB.kinds || {}, kinds);
+    Object.keys(kinds).concat(SB_LISTS).forEach(function (k) { if (!Array.isArray(fresh[k])) fresh[k] = []; });
     // 기존 객체를 살리면서 교체 (로그인한 사용자 등 참조 유지)
     Object.keys(fresh).forEach(function (k) {
       if (Array.isArray(fresh[k]) && kinds[k] && Array.isArray(DB[k])) {
@@ -13848,6 +13874,7 @@ function sbBoot() {
         DB[k] = fresh[k].map(function (x) { var o = old[String(x.id)]; if (o) { var keepUrl = sbKeepUrls(o); sbInPlace(o, x); sbRestoreUrls(o, keepUrl); return o; } return x; });
       } else DB[k] = fresh[k];
     });
+    sbFixLists();
     sbVenueWrite(venue);
     // 서버 기준 해시 기록
     SB.hashes = {};
