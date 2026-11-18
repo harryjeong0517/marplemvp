@@ -21459,5 +21459,95 @@ function mwhBtn() {
 })();
 
 </script>
+<script>
+// ════ 72차 — 홈페이지 주소로 로고 · 브랜드 컬러 자동 ════
+// /api/logo 가 그 사이트 아이콘(심볼)을 찾아 주면 → 배경 지우고 흰색 심볼로 + 가장 많이 쓰인 색을 브랜드 컬러로
+function clHomeNorm(u) { u = String(u || '').trim(); if (!u) return ''; if (!/^https?:\/\//i.test(u)) u = 'https://' + u; try { var x = new URL(u); return x.origin; } catch (e) { return ''; } }
+function clMainColor(img) {
+  try {
+    var c = document.createElement('canvas'), n = 64; c.width = n; c.height = n; var x = c.getContext('2d'); x.drawImage(img, 0, 0, n, n);
+    var d = x.getImageData(0, 0, n, n).data, bk = {};
+    for (var i = 0; i < d.length; i += 4) {
+      var a = d[i + 3]; if (a < 120) continue;
+      var r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, s = mx === mn ? 0 : (l > .5 ? (mx - mn) / (2 - mx - mn) : (mx - mn) / (mx + mn));
+      if (s < .28 || l < .12 || l > .88) continue;
+      var k = (d[i] >> 4) + ',' + (d[i + 1] >> 4) + ',' + (d[i + 2] >> 4);
+      var o = bk[k] || (bk[k] = { n: 0, r: 0, g: 0, b: 0 }); o.n++; o.r += d[i]; o.g += d[i + 1]; o.b += d[i + 2];
+    }
+    var best = null; Object.keys(bk).forEach(function (k) { if (!best || bk[k].n > best.n) best = bk[k]; });
+    if (!best || best.n < 12) return '';
+    var h = function (v) { return ('0' + Math.round(v / best.n).toString(16)).slice(-2); };
+    return ('#' + h(best.r) + h(best.g) + h(best.b)).toUpperCase();
+  } catch (e) { return ''; }
+}
+function clAutoLogo(home) {
+  return new Promise(function (ok, no) {
+    var h = clHomeNorm(home); if (!h) { no(new Error('홈페이지 주소를 넣어 주세요')); return; }
+    if (location.protocol === 'file:') { no(new Error('배포된 사이트에서만 돼요')); return; }
+    var src = '/api/logo?url=' + encodeURIComponent(h), im = new Image();
+    im.onload = function () {
+      var color = clMainColor(im);
+      clLogoWhite(src, function (d) { if (!d) { no(new Error('아이콘 모양을 찾지 못했어요')); return; } ok({ logo: d, color: color, home: h }); });
+    };
+    im.onerror = function () { no(new Error('그 홈페이지에서 아이콘을 찾지 못했어요')); };
+    im.src = src;
+  });
+}
+// 정보 수정 창: "홈페이지" 칸 + [로고 · 색 가져오기]
+if (typeof clEdit === 'function') clEdit = (function (orig) {
+  return function (name) {
+    var r = orig.apply(this, arguments);
+    try {
+      var rec = clRec(name) || {}, lg = document.getElementById('cl-logo');
+      if (lg && !document.getElementById('cl-home')) lg.closest('.form-group').insertAdjacentHTML('beforebegin',
+        '<div class="form-group"><label class="form-label">홈페이지 <span style="font-weight:500;color:var(--text3)">— 넣고 [가져오기]를 누르면 로고 심볼과 브랜드 컬러를 자동으로 채워요</span></label>' +
+        '<div style="display:flex;gap:8px"><input class="form-input" id="cl-home" value="' + qtEsc(rec.homepage || '') + '" placeholder="예: www.agilent.com"><button type="button" class="btn btn-primary btn-sm" id="cl-home-go" onclick="clHomeFetch()" style="white-space:nowrap">로고 · 색 가져오기</button></div></div>');
+    } catch (e) { console.warn('홈페이지 칸', e); }
+    return r;
+  };
+})(clEdit);
+function clHomeFetch() {
+  var inp = document.getElementById('cl-home'), btn = document.getElementById('cl-home-go'); if (!inp) return;
+  btn.disabled = true; btn.textContent = '찾는 중…';
+  clAutoLogo(inp.value).then(function (x) {
+    inp.value = x.home;
+    var el = document.getElementById('cl-logo'); el.value = x.logo; el.dataset.w = '1';
+    var br = document.getElementById('cl-brand'), pk = document.getElementById('cl-brand-pick');
+    if (x.color && br) { br.value = x.color; if (pk) pk.value = x.color.toLowerCase(); }
+    clLogoPreview();
+    showToast('로고' + (x.color ? '와 브랜드 컬러(' + x.color + ')' : '') + '를 채웠어요 — 저장을 눌러야 반영돼요');
+  }).catch(function (e) { showToast(e.message || '가져오지 못했어요', 'error'); })
+    .then(function () { btn.disabled = false; btn.textContent = '로고 · 색 가져오기'; });
+}
+if (typeof clEditSave === 'function') clEditSave = (function (orig) {
+  return function (name) { var el = document.getElementById('cl-home'); if (el) { var c = clEnsure(name), v = clHomeNorm(el.value); if (v) c.homepage = v; else delete c.homepage; } return orig.apply(this, arguments); };
+})(clEditSave);
+// 클라이언트 추가 창: 홈페이지를 넣으면 추가하면서 로고 · 색까지 자동
+if (typeof clAddOpen === 'function') clAddOpen = (function (orig) {
+  return function () {
+    var r = orig.apply(this, arguments);
+    try { var a = document.getElementById('ca-addr'); if (a && !document.getElementById('ca-home')) a.closest('.form-group').insertAdjacentHTML('beforebegin', '<div class="form-group"><label class="form-label">홈페이지 <span style="font-weight:500;color:var(--text3)">— 넣으면 로고 심볼 · 브랜드 컬러가 자동으로 들어가요</span></label><input class="form-input" id="ca-home" placeholder="예: www.agilent.com"></div>'); } catch (e) {}
+    return r;
+  };
+})(clAddOpen);
+if (typeof clAddSave === 'function') clAddSave = (function (orig) {
+  return function () {
+    var hi = document.getElementById('ca-home'), home = hi ? clHomeNorm(hi.value) : '', nm = ((document.getElementById('ca-name') || {}).value || '').trim();
+    var before = clAll().length, r = orig.apply(this, arguments);
+    if (home && nm && clAll().length > before) {
+      var c = clRec(nm); if (c) { c.homepage = home; saveDB(); }
+      clAutoLogo(home).then(function (x) {
+        var c2 = clRec(nm); if (!c2) return;
+        if (!c2.logo) { c2.logo = x.logo; c2.logoW = 1; }
+        if (!c2.brandColor && x.color) c2.brandColor = x.color;
+        saveDB(); try { renderClientsPage(); } catch (e) {}
+        showToast('"' + nm + '" 로고' + (x.color ? '와 브랜드 컬러' : '') + '를 자동으로 넣었어요');
+      }).catch(function (e) { showToast('"' + nm + '" 로고는 자동으로 못 찾았어요 — [정보 수정]에서 직접 넣어 주세요', 'error'); });
+    }
+    return r;
+  };
+})(clAddSave);
+
+</script>
 </body>
 </html>
