@@ -13629,7 +13629,7 @@ function sbVenueWrite(d) { try { localStorage.setItem('marple_venue_data_v2', JS
 // ════ 70차 — 동기화 안전장치 ════
 // ① 목록 데이터(프로젝트·업무 등)는 0개가 돼도 "목록"으로 유지 — 저장 방식이 바뀌며 다른 PC와 엇갈려 지워지던 문제 차단
 // ② 한 번에 많은 문서를 지우는 저장은 서버에 올리지 않고 서버 내용으로 다시 맞춤
-var SB_LISTS = ['projects', 'tasks', 'users', 'teams', 'depts', 'clients', 'notifications', 'calEvents', 'leaveRequests', 'library', 'vendors', 'vendorReviews', 'pushSubs', 'qchecks'];
+var SB_LISTS = ['projects', 'tasks', 'users', 'teams', 'depts', 'clients', 'notifications', 'calEvents', 'leaveRequests', 'library', 'vendors', 'vendorReviews', 'pushSubs', 'qchecks', 'taxIssued'];
 function sbIsList(k) { return SB_LISTS.indexOf(k) >= 0 || !!(SB.kinds && SB.kinds[k]); }
 function sbFixLists() { SB_LISTS.forEach(function (k) { if (!Array.isArray(DB[k])) DB[k] = []; }); }
 function sbGuardDeletes(rows) {
@@ -18721,7 +18721,7 @@ function openTaxInvoiceModal(pid, id) {
       '<div id="tix-items" class="tix-items"' + (TIX.mode === 'manual' ? ' style="display:none"' : '') + '>' + (its.length ? '<label class="tix-all"><input type="checkbox" checked onchange="tixAll(this.checked)"> 전체</label>' + its.map(function (i) { return '<label class="tix-it"><input type="checkbox" data-id="' + i.id + '"' + (TIX.sel[i.id] ? ' checked' : '') + ' onchange="TIX.sel[this.dataset.id]=this.checked;tixRefresh()"><span>' + E((i.category ? i.category + ' · ' : '') + i.name) + '</span><b' + (i.total < 0 ? ' style="color:var(--red)"' : '') + '>' + fmt(i.total) + '</b></label>'; }).join('') : '<div class="tix-empty">견적 항목이 없어요 — 직접 입력을 써 주세요</div>') + '</div>' +
       '<div id="tix-man"' + (TIX.mode === 'manual' ? '' : ' style="display:none"') + '><input class="form-input" id="tix-amt" inputmode="numeric" placeholder="공급가액 (부가세 별도)" value="' + (inv && inv.amountMode === 'manual' ? inv.amount : '') + '" oninput="tixRefresh()"></div>' +
       '<div class="tix-sum" id="tix-sum"></div></div>' +
-    '<div class="tix-sec"><div class="tix-h">첨부 <small>신규 클라이언트면 사업자등록증 등을 붙여 주세요 · 메일에 함께 첨부돼요</small><label class="btn btn-secondary btn-xs" style="margin-left:auto;cursor:pointer">+ 파일 첨부<input type="file" multiple style="display:none" onchange="tixAddFiles(this.files);this.value=\'\'"></label></div><div id="tix-files" class="tix-files"></div>' +
+    '<div class="tix-sec"><div class="tix-h">첨부 <small>신규 클라이언트면 사업자등록증 등을 붙여 주세요 · 메일에 함께 첨부돼요</small></div><input type="file" id="tix-input" multiple style="display:none" onchange="tixAddFiles(this.files);this.value=\'\'"><div class="tix-drop" id="tix-drop" onclick="if(!event.target.closest(\'.file-chip\'))document.getElementById(\'tix-input\').click()" ondragenter="tixDrag(event,1)" ondragover="tixDrag(event,1)" ondragleave="tixDrag(event,0)" ondrop="tixDrop(event)"><div class="tix-drop-msg"><span class="ic">⬆</span><b>파일을 여기로 끌어다 놓거나 클릭해서 첨부</b><small>PDF · 이미지 · 엑셀 등 · 파일당 15MB까지 · 여러 개 가능</small></div><div id="tix-files" class="tix-files"></div></div>' +
       '<div id="tix-req"></div></div>' +
     '<div class="tix-sec"><div class="tix-h">대표님께 갈 메일 <small>위 내용이 자동으로 채워져요 · 필요하면 직접 고쳐도 돼요</small><button class="btn btn-secondary btn-xs" style="margin-left:auto" onclick="TIX.bodyEdited=false;tixRefresh()">다시 채우기</button></div><textarea class="form-input tix-body" id="tix-body" oninput="TIX.bodyEdited=true">' + E(inv && inv.bodyEdited ? inv.body || '' : '') + '</textarea></div>' +
     '<div class="tix-foot">' + (inv && inv.mail ? '<span class="tix-sent">✓ ' + E(inv.mail.at || '') + ' 메일 보냄 (' + E(inv.mail.by || '') + ')</span>' : '') + '<button class="btn btn-secondary" onclick="tixSave(false)">임시 저장</button><button class="btn btn-primary" onclick="tixSend()">✉ 대표님께 발행 요청 메일 보내기</button></div></div>';
@@ -21551,6 +21551,104 @@ if (typeof clAddSave === 'function') clAddSave = (function (orig) {
     return r;
   };
 })(clAddSave);
+
+</script>
+<script>
+// 75차 — 세금계산서 발행 요청 첨부: 드래그 앤 드롭 + 클릭
+function tixDrag(e, on) { e.preventDefault(); e.stopPropagation(); var z = document.getElementById('tix-drop'); if (!z) return; if (on) z.classList.add('over'); else if (!z.contains(e.relatedTarget)) z.classList.remove('over'); }
+function tixDrop(e) { e.preventDefault(); e.stopPropagation(); var z = document.getElementById('tix-drop'); if (z) z.classList.remove('over'); var fl = e.dataTransfer && e.dataTransfer.files; if (fl && fl.length) { tixAddFiles(fl); showToast(fl.length + '개 파일을 붙였어요'); } }
+var _tixFiles75 = tixFiles; tixFiles = function () { var r = _tixFiles75.apply(this, arguments); var z = document.getElementById('tix-drop'); if (z) z.classList.toggle('has', !!(TIX.files && TIX.files.length)); return r; };
+window.addEventListener('dragover', function (e) { if (document.getElementById('tix-drop') && document.querySelector('#tix-modal.open')) e.preventDefault(); });
+window.addEventListener('drop', function (e) { if (document.querySelector('#tix-modal.open') && !e.target.closest('#tix-drop')) e.preventDefault(); });
+</script>
+<style id="s75-style">
+.tix-drop{margin-top:8px;border:2px dashed #c9d3e0;border-radius:12px;background:#f8fafc;padding:18px 14px;cursor:pointer;transition:border-color .15s,background .15s;text-align:center}
+.tix-drop:hover{border-color:#009BDF;background:#f2fafe}
+.tix-drop.over{border-color:#009BDF;background:#e3f4fc;box-shadow:inset 0 0 0 3px rgba(0,155,223,.12)}
+.tix-drop-msg{display:flex;flex-direction:column;align-items:center;gap:4px;pointer-events:none}
+.tix-drop-msg .ic{width:36px;height:36px;border-radius:50%;background:#e3f4fc;color:#009BDF;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800}
+.tix-drop-msg b{font-size:13.5px;color:#1f2937}.tix-drop-msg small{font-size:12px;color:#8a93a3}
+.tix-drop.has{padding:12px 14px}.tix-drop.has .tix-drop-msg{flex-direction:row;justify-content:center;gap:8px}.tix-drop.has .tix-drop-msg .ic{width:24px;height:24px;font-size:13px}.tix-drop.has .tix-drop-msg small{display:none}
+.tix-drop .tix-files{justify-content:center;margin-top:0}.tix-drop.has .tix-files{margin-top:10px;padding-top:10px;border-top:1px dashed #dbe2ea}
+.tix-drop .tix-empty{display:none}.tix-drop .file-chip{cursor:pointer}
+</style>
+<script>
+// ════ 76차 — 세금계산서 발행 메일 자동 연동 (marple_plan 메일함 → taxIssued → 요청 건 발행완료) ════
+function tiDig(s) { return String(s || '').replace(/\D/g, ''); }
+function tiNm(s) { return String(s || '').replace(/\(주\)|㈜|주식회사|\s/g, '').toLowerCase(); }
+function tiOpen() { var out = []; (DB.projects || []).forEach(function (p) { (p.taxInvoices || []).forEach(function (inv, idx) { if (inv.status === '요청됨' && !inv.approvalNo) out.push({ p: p, inv: inv, idx: idx }); }); }); return out; }
+function tiScore(t, x) {
+  var inv = x.inv, s = 0, amt = +inv.amount || 0;
+  if (t.supply && amt && t.supply === amt) s += 5; else if (t.total && (+inv.total || 0) && t.total === +inv.total) s += 5; else return 0;
+  if (t.buyerBizNo && tiDig(inv.bizno) && t.buyerBizNo === tiDig(inv.bizno)) s += 3;
+  if (t.buyerName && (tiNm(inv.receiver).indexOf(tiNm(t.buyerName)) >= 0 || tiNm(t.buyerName).indexOf(tiNm(inv.receiver)) >= 0)) s += 2;
+  var cr = typeof clRec === 'function' ? clRec(x.p.client) : null; if (cr && t.buyerBizNo && tiDig(cr.bizNo) === t.buyerBizNo) s += 2;
+  return s;
+}
+function tiCands(t) { return tiOpen().map(function (x) { return { x: x, s: tiScore(t, x) }; }).filter(function (c) { return c.s > 0; }).sort(function (a, b) { return b.s - a.s; }); }
+function tiApply(t, x, by) {
+  var inv = x.inv, p = x.p;
+  inv.status = '발행완료'; inv.issuedAt = t.writeDate || new Date().toISOString().slice(0, 10); inv.issuedBy = by || '홈택스 메일 자동'; inv.approvalNo = t.approvalNo; inv.taxIssuedId = t.id; inv.autoIssued = !by;
+  t.status = 'matched'; t.matched = { pid: p.id, invId: inv.id, at: new Date().toISOString(), by: by || 'auto' };
+  var u = (DB.users || []).find(function (z) { return z.id === inv.requestedById || z.name === inv.requestedBy; });
+  if (u && typeof pushNotification === 'function') pushNotification(u.id, 'tax', { title: '🧾 세금계산서 발행완료', message: p.name + ' · ' + (inv.receiver || '') + ' ' + fmt(inv.total || 0) + ' 세금계산서가 발행됐어요 (승인번호 ' + t.approvalNo + ')', projectId: p.id, tiId: inv.id });
+}
+// 자동 연결: 금액이 맞는 요청 건이 하나뿐이거나, 1등이 확실할 때만
+function tiAutoMatch() {
+  if (!currentUser || !Array.isArray(DB.taxIssued)) return 0;
+  var n = 0;
+  DB.taxIssued.forEach(function (t) {
+    if (!t || t.status !== 'new' || t.kind === 'purchase') return;
+    var c = tiCands(t); if (!c.length) return;
+    var ok = c.length === 1 ? c[0].s >= 5 : (c[0].s >= 8 && c[0].s > c[1].s);
+    if (ok) { tiApply(t, c[0].x); n++; }
+  });
+  if (n) { saveDB(); try { if (document.querySelector('#page-payplan.active')) renderPayPlanPage(); } catch (e) {} showToast('🧾 홈택스 발행 메일 ' + n + '건을 요청 건과 자동으로 연결했어요'); }
+  return n;
+}
+function tiPending() { return (DB.taxIssued || []).filter(function (t) { return t && t.status === 'new' && t.kind !== 'purchase'; }); }
+function tiLink(id, key) {
+  var t = (DB.taxIssued || []).find(function (z) { return z.id === id; }); if (!t) return;
+  if (key === '__ignore') { t.status = 'ignored'; t.ignoredBy = currentUser.name; saveDB(); renderPayPlanPage(); showToast('목록에서 뺐어요'); return; }
+  var k = String(key).split('|'), x = tiOpen().find(function (y) { return y.p.id === k[0] && y.inv.id === k[1]; });
+  if (!x) { showToast('요청 건을 찾지 못했어요', 'error'); return; }
+  tiApply(t, x, currentUser.name); saveDB(); renderPayPlanPage(); showToast('발행완료로 연결했어요');
+}
+function tiPanelHTML() {
+  var E = qtEsc, pend = tiPending(), recent = (DB.taxIssued || []).filter(function (t) { return t && t.status === 'matched'; }).sort(function (a, b) { return String(b.matched && b.matched.at).localeCompare(String(a.matched && a.matched.at)); }).slice(0, 3);
+  var open = tiOpen();
+  var h = '<div class="card ti-card"><div class="ti-h">📨 홈택스 발행 메일 연동 <small>marple_plan@marple.co.kr 로 온 발행 메일을 10분마다 읽어 요청 건과 자동 연결해요</small>' + (pend.length ? '<span class="ti-n">확인 필요 ' + pend.length + '</span>' : '<span class="ti-ok">모두 연결됨</span>') + '</div>';
+  if (pend.length) h += '<div class="ti-list">' + pend.map(function (t) {
+    var c = tiCands(t), ids = {}; c.forEach(function (z) { ids[z.x.p.id + '|' + z.x.inv.id] = 1; });
+    var opts = c.map(function (z) { return '<option value="' + z.x.p.id + '|' + z.x.inv.id + '">★ ' + E(z.x.p.name + ' · ' + (z.x.inv.receiver || '') + ' · ' + fmt(z.x.inv.amount || 0)) + '</option>'; }).join('') +
+      open.filter(function (y) { return !ids[y.p.id + '|' + y.inv.id]; }).map(function (y) { return '<option value="' + y.p.id + '|' + y.inv.id + '">' + E(y.p.name + ' · ' + (y.inv.receiver || '') + ' · ' + fmt(y.inv.amount || 0)) + '</option>'; }).join('');
+    return '<div class="ti-row"><div class="ti-info"><b>' + E(t.buyerName || (t.buyerBizNo ? t.buyerBizNo.replace(/(\d{3})(\d{2})(\d{5})/, '$1-$2-$3') : '공급받는자 미확인')) + '</b><span>공급가액 ' + fmt(t.supply || 0) + ' · 합계 ' + fmt(t.total || 0) + '</span><small>작성일 ' + E(t.writeDate || '-') + ' · 승인번호 ' + E(t.approvalNo) + (t.item ? ' · ' + E(t.item) : '') + '</small></div>' +
+      '<select class="form-select ti-sel" onchange="if(this.value)tiLink(\'' + E(t.id) + '\',this.value)"><option value="">어느 요청 건인가요? (' + (c.length ? '추천 ' + c.length + '건' : '금액 일치 없음') + ')</option>' + opts + '<option value="__ignore">— 연결 안 함 (목록에서 빼기)</option></select></div>';
+  }).join('') + '</div>';
+  if (recent.length) h += '<div class="ti-recent">최근 자동 연결 · ' + recent.map(function (t) { var p = (DB.projects || []).find(function (z) { return t.matched && z.id === t.matched.pid; }); return E((p ? p.name : '') + ' ' + fmt(t.supply || 0)) + (t.matched.by === 'auto' ? ' 🤖' : ' (' + E(t.matched.by) + ')'); }).join(' · ') + '</div>';
+  return h + '</div>';
+}
+if (typeof ppTaxHTML === 'function') { var _tiPpTax = ppTaxHTML; ppTaxHTML = function () { var r = _tiPpTax.apply(this, arguments); try { r = tiPanelHTML() + r; } catch (e) { console.warn('ti', e); } return r; }; }
+// 프로젝트 화면 세금계산서 목록: 승인번호 표시
+if (typeof renderTaxInvoiceList === 'function') { var _tiList = renderTaxInvoiceList; renderTaxInvoiceList = function (p) {
+  var html = _tiList.apply(this, arguments);
+  try { (p.taxInvoices || []).forEach(function (inv) { if (!inv.approvalNo) return; var tag = '<div class="ti-no">' + (inv.autoIssued ? '🤖 ' : '') + '승인 ' + qtEsc(inv.approvalNo) + '</div>'; var key = 'openTaxInvoiceModal(\'' + p.id + '\',\'' + inv.id + '\')'; var i = html.indexOf(key); if (i < 0) return; var td = html.lastIndexOf('</td><td><div style="display:flex', i); if (td > 0) html = html.slice(0, td) + tag + html.slice(td); }); } catch (e) {}
+  return html;
+}; }
+// 서버에서 새 메일 정보가 들어오면 바로 맞춰 보기
+setInterval(function () { try { if (tiPending().length) tiAutoMatch(); } catch (e) {} }, 15000);
+setTimeout(function () { try { tiAutoMatch(); } catch (e) {} }, 6000);
+(function () { var st = document.createElement('style'); st.id = 's76-style'; st.textContent = [
+  '.ti-card{padding:14px 16px;margin-bottom:12px;border-left:4px solid #009BDF}',
+  '.ti-h{display:flex;align-items:center;gap:8px;font-weight:800;font-size:14px;flex-wrap:wrap}.ti-h small{font-weight:500;color:var(--text3);font-size:12px}',
+  '.ti-n{margin-left:auto;background:#fff1e6;color:#d9480f;border-radius:999px;padding:3px 10px;font-size:12px}.ti-ok{margin-left:auto;background:#e6f7ee;color:#0a8f4f;border-radius:999px;padding:3px 10px;font-size:12px}',
+  '.ti-list{margin-top:10px;display:flex;flex-direction:column;gap:8px}',
+  '.ti-row{display:flex;align-items:center;gap:12px;background:#f8fafc;border:1px solid #e6ebf1;border-radius:10px;padding:10px 12px}',
+  '.ti-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.ti-info b{font-size:13.5px}.ti-info span{font-size:13px}.ti-info small{font-size:11.5px;color:var(--text3)}',
+  '.ti-sel{width:auto;max-width:420px;font-size:12.5px}',
+  '.ti-recent{margin-top:10px;font-size:12px;color:var(--text3)}',
+  '.ti-no{font-size:10.5px;color:var(--text3);margin-top:3px;white-space:nowrap}'
+].join('\n'); document.head.appendChild(st); })();
 
 </script>
 </body>
