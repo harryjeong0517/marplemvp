@@ -3940,6 +3940,9 @@ function profitBadge(rate) {
 // ════════════════════════════════════════════
 //  DASHBOARD
 // ════════════════════════════════════════════
+// 74차 — 프로젝트 연도 = 행사일 기준 (행사일 없으면 시작일)
+function pjBaseDate(p) { return (p && (p.eventStart || p.startDate || p.endDate)) || ''; }
+function pjYearOf(p) { return String(pjBaseDate(p)).slice(0, 4); }
 function renderDashboard() {
   const perms      = getUserPerms();
   const isAdmin    = currentUser.role === 'admin';
@@ -3947,7 +3950,8 @@ function renderDashboard() {
   const lockIcon   = `<span style="font-size:11px;color:var(--text3);margin-left:4px;">🔒</span>`;
 
   // ── 접근 가능한 프로젝트 범위 결정 ──────────────────────────
-  const allProjects = scProjects();
+  const DASH_YR = String(new Date().getFullYear());
+  const allProjects = scProjects().filter(p => pjYearOf(p) === DASH_YR);
   // 전사 수치용: dashTotal 권한 있으면 전체, 없으면 본인팀만
   const totalProjects = allProjects.filter(p => p.status === '완료');
   // 최근 프로젝트용: dashRecentAll 권한 있으면 전체, 없으면 본인팀
@@ -3961,7 +3965,7 @@ function renderDashboard() {
   const totalRate    = totalRev === 0 ? 0 : (totalProfit / totalRev) * 100;
 
   const showTotal = true;
-  const scopeLabel = scInfo().label;
+  const scopeLabel = DASH_YR + '년 ' + scInfo().label;
 
   document.getElementById('dash-stats').innerHTML = `
     <div class="stat-card">
@@ -4522,7 +4526,7 @@ function renderProjectsPage() {
   // 연도 옵션 populate (프로젝트 startDate 기준)
   const yearSel = document.getElementById('proj-year-filter');
   const years = [...new Set(DB.projects
-    .map(p => p.startDate ? p.startDate.slice(0,4) : null)
+    .map(p => pjYearOf(p) || null)
     .filter(Boolean)
   )].sort((a,b) => b - a);
   yearSel.innerHTML = '<option value="">전체 연도</option>' +
@@ -4644,9 +4648,9 @@ function renderProjectsList() {
   );
 
   // ── 연/월 필터 ──────────────────────────────────────────
-  if (filterYear)  projects = projects.filter(p => { const d = p.startDate || p.eventStart || ''; return !d || d.startsWith(filterYear); });
+  if (filterYear)  projects = projects.filter(p => { const d = pjBaseDate(p); return !d || d.startsWith(filterYear); });
   if (filterMonth) projects = projects.filter(p => {
-    const d = p.startDate || '';
+    const d = pjBaseDate(p);
     return d.length >= 7 && d.slice(5,7) === filterMonth;
   });
 
@@ -18150,7 +18154,7 @@ function renderHome() {
   var perf = '';
   if (currentUser && typeof scData === 'function') {
     var SC = scInfo(), ym = mrYm(new Date()), D = scData(ym), tg = SC.all ? hmTarget(ym) : 0, pct = tg ? Math.min(999, Math.round(D.rev / tg * 100)) : null;
-    var hist = []; for (var i = 5; i >= 0; i--) { var y = mrShiftYm(ym, -i); hist.push({ y: y, v: i ? scData(y).rev : D.rev }); }
+    var hist = []; for (var i = 5; i >= 0; i--) { var y = mrShiftYm(ym, -i); if (y.slice(0, 4) !== ym.slice(0, 4)) continue; hist.push({ y: y, v: i ? scData(y).rev : D.rev }); }
     var mx = Math.max.apply(null, hist.map(function (x) { return x.v; }).concat([1])), dR = D.revP ? Math.round((D.rev - D.revP) / D.revP * 100) : null;
     var ring = '<svg width="96" height="96" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" fill="none" stroke="#eef0f4" stroke-width="4"/>' + (pct != null ? '<circle cx="18" cy="18" r="15.5" fill="none" stroke="' + (pct >= 100 ? '#00a862' : '#007db8') + '" stroke-width="4" stroke-linecap="round" stroke-dasharray="' + Math.min(100, pct) * 0.974 + ' 100" transform="rotate(-90 18 18)"/>' : '') + '<text x="18" y="20.5" text-anchor="middle" font-size="' + (pct != null ? 8 : 5.5) + '" font-weight="900" fill="#16191f">' + (pct != null ? pct + '%' : '목표 없음') + '</text></svg>';
     var pp = typeof ppCan === 'function' && ppCan() && typeof ppRows === 'function' ? ppRows().filter(function (x) { return x.st === 'ready' && x.date && x.date <= hmAdd(7 - ((new Date().getDay() + 6) % 7)); }) : null;
