@@ -13636,9 +13636,10 @@ function sbGuardDeletes(rows) {
   // 목록 표시(_kind)는 절대 지우지 않음
   rows = rows.filter(function (r) { return !(r.coll === '_kind' && r.deleted && sbIsList(r.id)); });
   if (window.SB_ALLOW_MASS) return rows;
+  var IDL = window.SB_INTENDED_DEL || {};
   var del = {}, have = {};
   Object.keys(SB.hashes).forEach(function (k) { var p = k.indexOf('|'), c = k.slice(0, p); if (SB.hashes[k] !== 'DEL' && c !== '_kv' && c !== '_kind') have[c] = (have[c] || 0) + 1; });
-  rows.forEach(function (r) { if (r.deleted && r.coll !== '_kv' && r.coll !== '_kind') del[r.coll] = (del[r.coll] || 0) + 1; });
+  rows.forEach(function (r) { if (r.deleted && r.coll !== '_kv' && r.coll !== '_kind' && !IDL[r.coll + '|' + r.id]) del[r.coll] = (del[r.coll] || 0) + 1; });
   var bad = {};
   Object.keys(del).forEach(function (c) { var d = del[c], n = have[c] || 0; if ((d >= 5 && d >= n * 0.4) || (n >= 3 && d >= n)) bad[c] = d; });
   if (!Object.keys(bad).length) return rows;
@@ -20351,7 +20352,7 @@ renderPermissionsPage = function () {
   var el = document.getElementById('permissions-content'); if (!el) return;
   var E = qtEsc, page = document.getElementById('page-admin-permissions'), can = s53CanEditScope();
   if (page) {
-    var intro = page.firstElementChild; if (intro && !intro.dataset.s53) { intro.dataset.s53 = '1'; intro.innerHTML = '<div class="us-note" style="margin:0"><b>프로젝트는 전 직원이 모두 볼 수 있어요.</b> 이 설정은 <b>대시보드 · 매출 분석 · 홈 실적 카드 · 거래처 매출</b>에 보이는 매출 범위예요.<br><b>기본은 자동</b>이에요 — 대표 · 관리자는 회사 전체, 본부장은 맡은 본부, 팀장/실장 · 팀원은 자기 팀. 사람마다 <b>회사 전체 / 본부 선택 / 팀 선택 / 본인 담당만</b>으로 따로 바꿀 수 있어요. 어느 범위든 본인이 담당자이거나 만든 프로젝트 매출은 항상 포함돼요.<br>인사이동: <b>자동</b>인 사람은 소속 팀만 바꾸면 따라가요. <b>본부 선택</b>은 그 본부에 팀이 생기거나 옮겨도 따라가고, <b>팀 선택</b>은 고른 팀 그대로예요.</div>'; }
+    var intro = page.firstElementChild; if (intro && !intro.dataset.s53) { intro.dataset.s53 = '1'; intro.innerHTML = '<div class="us-note" style="margin:0"><b>프로젝트는 자기 팀 것만 보여요</b> (본부장은 맡은 본부, 대표 · 관리자는 전체 · 본인이 담당인 프로젝트는 항상). 이 설정은 <b>대시보드 · 매출 분석 · 홈 실적 카드 · 거래처 매출</b>에 보이는 매출 범위예요.<br><b>기본은 자동</b>이에요 — 대표 · 관리자는 회사 전체, 본부장은 맡은 본부, 팀장/실장 · 팀원은 자기 팀. 사람마다 <b>회사 전체 / 본부 선택 / 팀 선택 / 본인 담당만</b>으로 따로 바꿀 수 있어요. 어느 범위든 본인이 담당자이거나 만든 프로젝트 매출은 항상 포함돼요.<br>인사이동: <b>자동</b>인 사람은 소속 팀만 바꾸면 따라가요. <b>본부 선택</b>은 그 본부에 팀이 생기거나 옮겨도 따라가고, <b>팀 선택</b>은 고른 팀 그대로예요.</div>'; }
     var hd = page.querySelector('.card-header'); if (hd) hd.innerHTML = '<span class="card-title">직원별 매출 열람 범위</span>' + (can ? '<button class="btn btn-secondary btn-sm" onclick="s53ScopeResetAll()">모두 자동으로 되돌리기</button>' : '');
   }
   var chips = function (u) {
@@ -21659,6 +21660,164 @@ function tvGo(u) { try { var h = 5381, s = String(u.pw || ''); for (var i = 0; i
   if (typeof doLogin === 'function') { var _tvDL = doLogin; doLogin = function () { var el = document.getElementById('login-id'), pw = document.getElementById('login-pw'); var u = el && pw && (DB.users || []).find(function (x) { return x.id === el.value.trim() && x.pw === pw.value && x.status === 'active'; }); if (tvOnlyUser(u)) return tvGo(u); return _tvDL.apply(this, arguments); }; }
   setInterval(function () { try { if (tvOnlyUser(currentUser)) tvGo(currentUser); } catch (e) {} }, 1500);
 })();
+</script>
+<script>
+// ════ 80차 — 프로젝트는 자기 팀 것만 · 대표 · 관리자는 전체 · 본부장은 맡은 본부 ════
+function pvTeams(u) {
+  var teams = DB.teams || [], depts = DB.depts || [];
+  if (u.approvalRole === 'deptHead') {
+    var my = teams.find(function (t) { return t.name === u.team; }) || {};
+    var d = depts.find(function (x) { return x.headId === u.id; }) || depts.find(function (x) { return x.id === (my.deptId || u.deptId); });
+    if (d) { var ns = teams.filter(function (t) { return t.deptId === d.id; }).map(function (t) { return t.name; }); if (u.team && ns.indexOf(u.team) < 0) ns.push(u.team); return ns; }
+  }
+  return [u.team].filter(Boolean);
+}
+function pvAll(u) { return !!u && (u.role === 'admin' || u.approvalRole === 'ceo'); }
+function pvCan(u, p) {
+  if (!u || !p) return false; if (pvAll(u)) return true;
+  if (p.manager === u.name || p.createdBy === u.id || p.createdBy === u.name) return true;
+  if ((p.members || []).indexOf(u.id) >= 0 || (p.members || []).indexOf(u.name) >= 0) return true;
+  return pvTeams(u).indexOf(p.team) >= 0;
+}
+
+getAccessibleProjects = function () { return (DB.projects || []).filter(function (p) { return p && pvCan(currentUser, p); }); };
+s53AllProjects = getAccessibleProjects;
+// 일정 여러 개 한 번에 저장 · 삭제 (반복 일정)
+CAL_PC_HOST.saveMany = function (list) { if (!Array.isArray(DB.calEvents)) DB.calEvents = []; list.forEach(function (e) { var i = DB.calEvents.findIndex(function (x) { return x.id === e.id; }); if (i >= 0) DB.calEvents[i] = e; else DB.calEvents.push(e); }); saveDB(); };
+CAL_PC_HOST.removeMany = function (ids) { var m = window.SB_INTENDED_DEL = window.SB_INTENDED_DEL || {}; ids.forEach(function (id) { m['calEvents|' + id] = 1; }); DB.calEvents = (DB.calEvents || []).filter(function (x) { return ids.indexOf(x.id) < 0; }); saveDB(); };
+// ════ 80차 — 일정: 반복(매일 · 평일 · 매주) · 참석자 모두 선택 · 팀 단위 선택 ════
+var CAL_REP = [['none', '반복 안 함'], ['daily', '매일'], ['weekdays', '평일마다'], ['weekly', '매주']];
+function calRepLabel(r, s) { var d = calD(s); if (r === 'daily') return '매일'; if (r === 'weekdays') return '평일마다'; if (r === 'weekly') return '매주 ' + (d ? ['일', '월', '화', '수', '목', '금', '토'][d.getDay()] + '요일' : ''); return ''; }
+function calTeamsOf(users) {
+  var order = (typeof DB !== 'undefined' && Array.isArray(DB.teams) ? DB.teams : []).map(function (t) { return t.name; }), seen = {};
+  users.forEach(function (u) { if (u.team) seen[u.team] = 1; });
+  var list = order.filter(function (n) { return seen[n]; });
+  Object.keys(seen).forEach(function (n) { if (list.indexOf(n) < 0) list.push(n); });
+  return list;
+}
+function calPeopleSync() {
+  var a = window._calEv.attendees;
+  [].forEach.call(document.querySelectorAll('#cf-people [data-u]'), function (b) { b.classList.toggle('on', a.indexOf(b.getAttribute('data-u')) >= 0); });
+  var n = document.getElementById('cf-pcount'); if (n) n.textContent = a.length ? a.length + '명' : '';
+}
+function calPick1(id) { var a = window._calEv.attendees, i = a.indexOf(id); if (i >= 0) a.splice(i, 1); else a.push(id); calPeopleSync(); }
+function calPickAll(on) { window._calEv.attendees = on ? window._calUsers.map(function (u) { return u.id; }) : []; calPeopleSync(); }
+function calPickTeam(team) { window._calEv.attendees = window._calUsers.filter(function (u) { return u.team === team; }).map(function (u) { return u.id; }); calPeopleSync(); }
+function calRepSet(r) {
+  window._calEv.repeat = r;
+  [].forEach.call(document.querySelectorAll('#cf-rep button'), function (b) { b.classList.toggle('on', b.getAttribute('data-r') === r); });
+  var u = document.getElementById('cf-until-row'); if (u) u.style.display = r === 'none' ? 'none' : '';
+}
+
+calEdit = function (ev) {
+  var H = CAL.host, me = H.me(), can = !ev.id || ev.owner === me.id || me.role === 'admin' || (ev.attendees || []).indexOf(me.id) >= 0;
+  window._calEv = JSON.parse(JSON.stringify(ev)); window._calEv.attendees = window._calEv.attendees || []; window._calEv.repeat = ev.id ? 'none' : (ev.repeat || 'none');
+  var users = (H.users() || []).filter(function (u) { return u.status === 'active' && u.id !== 'calendar' && u.role !== 'tv'; }).sort(function (a, b) { return a.name.localeCompare(b.name, 'ko'); });
+  window._calUsers = users;
+  var teams = calTeamsOf(users), dis = can ? '' : ' disabled';
+  var until = calISO(calAdd(calD(ev.start) || new Date(), 90));
+  var series = ev.seriesId ? (H.custom() || []).filter(function (x) { return x.seriesId === ev.seriesId; }) : [];
+  var body = '<div class="cal-form">' +
+    '<label>제목<input id="cf-title" value="' + calEsc(ev.title) + '" placeholder="예: 주간 기획 회의"' + dis + '></label>' +
+    '<div class="cal-types">' + CAL_TYPES.map(function (t) { return '<button type="button" class="' + (ev.type === t[0] ? 'on' : '') + '" style="--c:' + t[2] + '" ' + (can ? 'onclick="window._calEv.type=\'' + t[0] + '\';[].forEach.call(this.parentNode.children,function(b){b.classList.remove(\'on\')});this.classList.add(\'on\')"' : 'disabled') + '><i></i>' + t[1] + '</button>'; }).join('') + '</div>' +
+    '<div class="cal-2"><label>시작일<input type="date" id="cf-start" value="' + calEsc(ev.start) + '"' + dis + ' onchange="var e=document.getElementById(\'cf-end\');if(e.value<this.value)e.value=this.value"></label><label>종료일<input type="date" id="cf-end" value="' + calEsc(ev.end || ev.start) + '"' + dis + '></label></div>' +
+    '<div class="cal-2"><label>시간 (선택)<input type="time" id="cf-time" value="' + calEsc(ev.time || '') + '"' + dis + '></label><label>장소 (선택)<input id="cf-place" value="' + calEsc(ev.place || '') + '" placeholder="예: 3층 회의실"' + dis + '></label></div>' +
+    (ev.id ? (series.length > 1 ? '<div class="cal-rep-info">🔁 ' + calEsc(calRepLabel(ev.repeatRule, ev.start) || '반복') + ' 일정 · 모두 ' + series.length + '번' + (ev.repeatUntil ? ' · ' + calEsc(calMD(ev.repeatUntil)) + '까지' : '') + '</div>' : '') :
+      '<label>반복</label><div class="cal-rep" id="cf-rep">' + CAL_REP.map(function (r) { return '<button type="button" data-r="' + r[0] + '" class="' + (window._calEv.repeat === r[0] ? 'on' : '') + '" onclick="calRepSet(\'' + r[0] + '\')"' + dis + '>' + r[1] + '</button>'; }).join('') + '</div>' +
+      '<div class="cal-2" id="cf-until-row" style="display:none"><label>반복 끝나는 날<input type="date" id="cf-until" value="' + until + '"></label><div class="cal-hint">최대 1년, 200번까지 만들어져요</div></div>') +
+    '<label>참석자 <b id="cf-pcount" class="cal-pcount"></b></label>' +
+    (can ? '<div class="cal-pick"><button type="button" onclick="calPickAll(1)">모두 선택</button><button type="button" onclick="calPickAll(0)">선택 해제</button>' +
+      teams.map(function (t) { return '<button type="button" class="tm" onclick="calPickTeam(\'' + calEsc(t).replace(/&#39;/g, "\\'") + '\')">' + calEsc(t) + '</button>'; }).join('') + '</div>' : '') +
+    '<div class="cal-people" id="cf-people">' + users.map(function (u) { return '<button type="button" data-u="' + calEsc(u.id) + '" ' + (can ? 'onclick="calPick1(\'' + calEsc(u.id) + '\')"' : 'disabled') + ' title="' + calEsc(u.team || '') + '">' + calEsc(u.name) + '</button>'; }).join('') + '</div>' +
+    '<label>메모<textarea id="cf-memo" rows="3"' + dis + '>' + calEsc(ev.memo || '') + '</textarea></label>' +
+    '<label class="cal-chk"><input type="checkbox" id="cf-priv"' + (ev.visibility === 'private' ? ' checked' : '') + dis + '> 나와 참석자만 보기</label>' +
+    (ev.id ? '<div class="cal-meta">등록 ' + calEsc((H.user(ev.owner) || {}).name || '') + (ev.createdAt ? ' · ' + calEsc(String(ev.createdAt).slice(0, 10)) : '') + '</div>' : '') + '</div>';
+  var foot;
+  if (!can) foot = '<button class="cal-btn" onclick="CAL.host.closeForm()">닫기</button>';
+  else if (ev.id && series.length > 1) foot = '<button class="cal-btn red" onclick="calDelete()">이것만 삭제</button><button class="cal-btn red" onclick="calDelete(1)">이후 모두 삭제</button><button class="cal-btn" onclick="calSave()">이것만 저장</button><button class="cal-btn pri" onclick="calSave(1)">이후 모두 저장</button>';
+  else foot = (ev.id ? '<button class="cal-btn red" onclick="calDelete()">삭제</button>' : '') + '<button class="cal-btn pri" onclick="calSave()">' + (ev.id ? '저장' : '일정 추가') + '</button>';
+  H.form(ev.id ? '일정' : '새 일정', body, foot);
+  calPeopleSync();
+  setTimeout(function () { var t = document.getElementById('cf-title'); if (t && !ev.id && !H.mobile) t.focus(); }, 200);
+};
+
+function calDates(rule, s, until) {
+  var out = [], d = calD(s), u = calD(until); if (!d || !u) return [s];
+  var lim = calAdd(d, 366); if (u > lim) u = lim;
+  for (var x = new Date(d); x <= u && out.length < 200; x = calAdd(x, rule === 'weekly' ? 7 : 1)) {
+    if (rule === 'weekdays' && (x.getDay() === 0 || x.getDay() === 6)) continue;
+    out.push(calISO(x));
+  }
+  return out.length ? out : [s];
+}
+
+calSave = function (all) {
+  var H = CAL.host, me = H.me(), e = window._calEv, title = document.getElementById('cf-title').value.trim();
+  if (!title) { H.toast('제목을 적어 주세요', true); return; }
+  var s = document.getElementById('cf-start').value, en = document.getElementById('cf-end').value || s;
+  if (!s) { H.toast('날짜를 골라 주세요', true); return; }
+  if (en < s) en = s;
+  var isNew = !e.id, now = new Date().toISOString();
+  var common = { title: title, type: e.type, time: document.getElementById('cf-time').value, place: document.getElementById('cf-place').value.trim(), memo: document.getElementById('cf-memo').value.trim(), visibility: document.getElementById('cf-priv').checked ? 'private' : 'all', attendees: (e.attendees || []).slice(), updatedAt: now };
+  var invite = function (list, label) {
+    (common.attendees || []).filter(function (x) { return x !== me.id && list.indexOf(x) < 0; }).forEach(function (x) { H.notify(x, { type: 'cal', title: '일정 초대', message: me.name + '님이 ' + label + (common.time ? ' ' + common.time : '') + ' "' + title + '" 일정에 초대했어요.', calId: e.id }); });
+  };
+  var saved = [];
+  if (isNew) {
+    var rule = e.repeat || 'none', span = Math.round((calD(en) - calD(s)) / 864e5);
+    var dates = rule === 'none' ? [s] : calDates(rule, s, (document.getElementById('cf-until') || {}).value || s);
+    var sid = dates.length > 1 ? 'cs' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5) : '';
+    dates.forEach(function (d, i) {
+      var x = Object.assign({}, common, { id: 'ce' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5) + i, start: d, end: calISO(calAdd(calD(d), span)), owner: me.id, createdAt: now });
+      if (sid) { x.seriesId = sid; x.repeatRule = rule; x.repeatUntil = dates[dates.length - 1]; }
+      saved.push(x);
+    });
+    e.id = saved[0].id;
+    (H.saveMany ? H.saveMany(saved) : saved.forEach(function (x) { H.saveEvent(x, true); }));
+    invite([], sid ? calRepLabel(rule, s) + ' (' + calMD(dates[0]) + '~' + calMD(dates[dates.length - 1]) + ', ' + dates.length + '번)' : calRange(s, en));
+  } else {
+    var prev = ((H.custom() || []).find(function (x) { return x.id === e.id; }) || {}).attendees || [];
+    var one = Object.assign(e, common, { start: s, end: en }); delete one.repeat;
+    saved.push(one);
+    if (all && e.seriesId) {
+      (H.custom() || []).forEach(function (x) { if (x.seriesId === e.seriesId && x.id !== e.id && x.start > s) saved.push(Object.assign(x, common)); });
+    }
+    (H.saveMany ? H.saveMany(saved) : saved.forEach(function (x) { H.saveEvent(x, false); }));
+    invite(prev, saved.length > 1 ? '반복 일정' : calRange(s, en));
+  }
+  H.closeForm(); CAL.sel = s; var d0 = calD(s); CAL.y = d0.getFullYear(); CAL.m = d0.getMonth();
+  H.render(); H.toast(isNew ? (saved.length > 1 ? '반복 일정 ' + saved.length + '개를 추가했어요' : '일정을 추가했어요') : (saved.length > 1 ? '이후 반복 ' + saved.length + '개를 저장했어요' : '일정을 저장했어요'));
+};
+
+calDelete = function (all) {
+  var H = CAL.host, e = window._calEv; if (!e || !e.id) return;
+  var ids = [e.id];
+  if (all && e.seriesId) (H.custom() || []).forEach(function (x) { if (x.seriesId === e.seriesId && x.start >= e.start && x.id !== e.id) ids.push(x.id); });
+  var foot = document.querySelector('#cal-modal .modal > div:last-child') || document.querySelector('.sheet-foot, #sheet .sf');
+  var btn = window.event && window.event.target;
+  if (btn && !btn.dataset.sure) { btn.dataset.sure = '1'; btn.textContent = ids.length > 1 ? ids.length + '개 정말 삭제' : '정말 삭제'; setTimeout(function () { if (btn) { delete btn.dataset.sure; } }, 4000); return; }
+  (H.removeMany ? H.removeMany(ids) : ids.forEach(function (id) { H.removeEvent(id); }));
+  H.closeForm(); H.render(); H.toast(ids.length > 1 ? '반복 일정 ' + ids.length + '개를 삭제했어요' : '일정을 삭제했어요');
+};
+
+(function () {
+  var st = document.createElement('style'); st.id = 's80-cal-style';
+  st.textContent = [
+    '.cal-rep,.cal-pick{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}',
+    '.cal-rep button,.cal-pick button{border:1px solid #d5d9e0;background:#fff;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;color:#4b5563;cursor:pointer;font-family:inherit}',
+    '.cal-rep button.on{background:#009BDF;border-color:#009BDF;color:#fff}',
+    '.cal-pick button{padding:4px 10px;font-size:12px;background:#f6f7f9}',
+    '.cal-pick button.tm{background:#e3f4fc;border-color:#bfe3f5;color:#00699b}',
+    '.cal-pick button:hover,.cal-rep button:hover{border-color:#009BDF}',
+    '.cal-pcount{color:#009BDF;font-weight:700;margin-left:4px}',
+    '.cal-hint{font-size:12px;color:#8a93a3;align-self:end;padding-bottom:10px}',
+    '#cal-modal .modal > div:last-child{flex-wrap:wrap}',
+    '#cal-modal .cal-btn{white-space:nowrap;flex:1 1 calc(50% - 8px)}',
+    '.cal-rep-info{background:#f0f9fe;border:1px solid #cfeaf8;color:#00699b;border-radius:10px;padding:8px 12px;font-size:13px;font-weight:600;margin:2px 0 10px}'
+  ].join('\n');
+  document.head.appendChild(st);
+})();
+
 </script>
 </body>
 </html>
