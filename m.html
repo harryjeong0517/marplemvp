@@ -5677,5 +5677,18 @@ vMore = function () {
   if (typeof start === 'function') { var _s = start; start = function (u) { if (isTv(u)) return go(u); return _s.apply(this, arguments); }; }
 })();
 </script>
+<script>
+// 79차 — 확인 팝업을 막는 브라우저(TV 등)에서도 로그아웃되도록 화면 안 확인창 사용
+logout = function () {
+  openSheet('로그아웃', '<p style="margin:4px 2px 0;font-size:15px">이 기기에서 로그아웃할까요?</p>',
+    '<button class="btn" style="flex:1" onclick="closeSheet()">취소</button><button class="btn pri" style="flex:1" onclick="closeSheet();logoutNow()">로그아웃</button>');
+};
+function logoutNow() {
+  try { localStorage.removeItem(M_LOGIN); } catch (e) {}
+  try { localStorage.removeItem('marple_tv_login'); } catch (e) {}
+  try { chStop(); } catch (e) {}
+  me = null; location.hash = ''; showLogin();
+}
+</script>
 </body>
 </html>
