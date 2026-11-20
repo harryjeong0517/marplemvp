@@ -5846,5 +5846,358 @@ calDelete = function (all) {
 })();
 
 </script>
+<script>
+function clHomeNorm(u) { u = String(u || '').trim(); if (!u) return ''; if (!/^https?:\/\//i.test(u)) u = 'https://' + u; try { var x = new URL(u); return x.origin; } catch (e) { return ''; } }
+function clMainColor(img) {
+  try {
+    var c = document.createElement('canvas'), n = 64; c.width = n; c.height = n; var x = c.getContext('2d'); x.drawImage(img, 0, 0, n, n);
+    var d = x.getImageData(0, 0, n, n).data, bk = {};
+    for (var i = 0; i < d.length; i += 4) {
+      var a = d[i + 3]; if (a < 120) continue;
+      var r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, s = mx === mn ? 0 : (l > .5 ? (mx - mn) / (2 - mx - mn) : (mx - mn) / (mx + mn));
+      if (s < .28 || l < .12 || l > .88) continue;
+      var k = (d[i] >> 4) + ',' + (d[i + 1] >> 4) + ',' + (d[i + 2] >> 4);
+      var o = bk[k] || (bk[k] = { n: 0, r: 0, g: 0, b: 0 }); o.n++; o.r += d[i]; o.g += d[i + 1]; o.b += d[i + 2];
+    }
+    var best = null; Object.keys(bk).forEach(function (k) { if (!best || bk[k].n > best.n) best = bk[k]; });
+    if (!best || best.n < 12) return '';
+    var h = function (v) { return ('0' + Math.round(v / best.n).toString(16)).slice(-2); };
+    return ('#' + h(best.r) + h(best.g) + h(best.b)).toUpperCase();
+  } catch (e) { return ''; }
+}
+function clLogoWhite(src, cb) {
+  var im = new Image();
+  im.onload = function () {
+    try {
+      var W0 = im.naturalWidth || 200, H0 = im.naturalHeight || 200, sc = Math.min(1, 600 / Math.max(W0, H0));
+      var w = Math.max(1, Math.round(W0 * sc)), h = Math.max(1, Math.round(H0 * sc));
+      var c = document.createElement('canvas'); c.width = w; c.height = h; var x = c.getContext('2d'); x.drawImage(im, 0, 0, w, h);
+      var g = x.getImageData(0, 0, w, h), d = g.data, n = w * h;
+      // 모서리가 투명하면 투명 배경, 아니면 모서리 색을 배경으로 보고 지움
+      var cs = [[0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1], [w >> 1, 0], [0, h >> 1], [w - 1, h >> 1], [w >> 1, h - 1]], tr = 0, br = 0, bg = 0, bb = 0, k = 0;
+      cs.forEach(function (p) { var i = (p[1] * w + p[0]) * 4; if (d[i + 3] < 40) tr++; else { br += d[i]; bg += d[i + 1]; bb += d[i + 2]; k++; } });
+      var useAlpha = tr >= 4 || !k; if (k) { br /= k; bg /= k; bb /= k; }
+      var x0 = w, y0 = h, x1 = -1, y1 = -1;
+      for (var j = 0; j < h; j++) for (var i2 = 0; i2 < w; i2++) {
+        var o = (j * w + i2) * 4, a = d[o + 3];
+        if (!useAlpha) { var dist = Math.sqrt(Math.pow(d[o] - br, 2) + Math.pow(d[o + 1] - bg, 2) + Math.pow(d[o + 2] - bb, 2)); a = Math.round(a * Math.max(0, Math.min(1, (dist - 30) / 60))); }
+        d[o] = d[o + 1] = d[o + 2] = 255; d[o + 3] = a;
+        if (a > 40) { if (i2 < x0) x0 = i2; if (i2 > x1) x1 = i2; if (j < y0) y0 = j; if (j > y1) y1 = j; }
+      }
+      if (x1 < 0) { cb(null); return; }
+      x.putImageData(g, 0, 0);
+      var cw = x1 - x0 + 1, ch = y1 - y0 + 1, H = Math.min(96, ch), Wd = Math.round(cw * H / ch); if (Wd > 480) { H = Math.round(H * 480 / Wd); Wd = 480; }
+      var c2 = document.createElement('canvas'); c2.width = Wd; c2.height = H; var x2 = c2.getContext('2d'); x2.imageSmoothingQuality = 'high'; x2.drawImage(c, x0, y0, cw, ch, 0, 0, Wd, H);
+      cb(c2.toDataURL('image/png'));
+    } catch (e) { cb(null); }
+  };
+  im.onerror = function () { cb(null); }; im.src = src;
+}
+// ════ 81차 — 명함 촬영 → AI가 칸 전부 채움 · 새 회사면 로고 · 브랜드 컬러까지 클라이언트로 ════
+var BC_FREE = /(^|\.)(gmail|naver|daum|hanmail|kakao|nate|outlook|hotmail|live|icloud|me|yahoo|empas|paran|korea)\.(com|net|co\.kr|kr)$/i;
+function bcDomain(card) {
+  var w = String(card.website || '').trim();
+  if (w) { var h = clHomeNorm(w.replace(/^www\./i, 'www.')); if (h) return h; }
+  var em = String(card.email || '').split('@')[1] || '';
+  if (em && !BC_FREE.test(em)) return clHomeNorm(em);
+  return '';
+}
+function bcHost(u) { try { return new URL(clHomeNorm(u)).hostname.replace(/^www\./, '').toLowerCase(); } catch (e) { return ''; } }
+// 이메일 · 홈페이지 도메인이 같은 기존 클라이언트
+function bcFindByDomain(home) {
+  var h = bcHost(home); if (!h) return null;
+  return (DB.clients || []).find(function (c) {
+    if (c.homepage && bcHost(c.homepage) === h) return true;
+    return (c.contacts || []).some(function (x) { return x.email && String(x.email).split('@')[1] && String(x.email).split('@')[1].toLowerCase().replace(/^www\./, '') === h; });
+  }) || null;
+}
+function bcExisting(name) {
+  var k = bcKey(name); if (!k) return null;
+  var c = (DB.clients || []).find(function (y) { return bcKey(y.name) === k || (y.aliases || []).some(function (a) { return bcKey(a) === k; }); });
+  if (c) return { name: c.name, rec: c };
+  var p = projects().find(function (x) { return bcKey(x.client) === k; });
+  return p ? { name: p.client, rec: null } : null;
+}
+// 명함 사진에서 로고 영역 잘라내기 (좌표는 0~1000)
+function bcCrop(dataUrl, box) {
+  return new Promise(function (ok) {
+    var im = new Image();
+    im.onload = function () {
+      var W = im.naturalWidth, H = im.naturalHeight, pad = 0.02;
+      var x0 = Math.max(0, (box[0] / 1000 - pad) * W), y0 = Math.max(0, (box[1] / 1000 - pad) * H), x1 = Math.min(W, (box[2] / 1000 + pad) * W), y1 = Math.min(H, (box[3] / 1000 + pad) * H);
+      var w = Math.round(x1 - x0), h = Math.round(y1 - y0); if (w < 8 || h < 8) { ok(''); return; }
+      var c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(im, x0, y0, w, h, 0, 0, w, h);
+      ok(c.toDataURL('image/png'));
+    };
+    im.onerror = function () { ok(''); }; im.src = dataUrl;
+  });
+}
+function bcImgColor(src) { return new Promise(function (ok) { var im = new Image(); im.onload = function () { ok(clMainColor(im)); }; im.onerror = function () { ok(''); }; im.src = src; }); }
+function bcWhite(src) { return new Promise(function (ok) { clLogoWhite(src, function (d) { ok(d || ''); }); }); }
+// 로고 찾기: ① 홈페이지 · 이메일 도메인의 아이콘 (선명함) → ② 명함 위 로고 잘라내기
+function bcFindLogo(card, photo) {
+  var home = bcDomain(card), B = window._bc;
+  var fromSite = !home || location.protocol === 'file:' ? Promise.reject() : new Promise(function (ok, no) {
+    var src = '/api/logo?url=' + encodeURIComponent(home), im = new Image();
+    im.onload = function () { var color = clMainColor(im); bcWhite(src).then(function (d) { d ? ok({ logo: d, color: color, via: 'site' }) : no(); }); };
+    im.onerror = function () { no(); }; im.src = src;
+  });
+  return fromSite.catch(function () {
+    if (!card.logoBox || !photo) return null;
+    return bcCrop(photo.dataUrl, card.logoBox).then(function (crop) {
+      if (!crop) return null;
+      return Promise.all([bcWhite(crop), bcImgColor(crop)]).then(function (r) { return r[0] ? { logo: r[0], color: r[1], via: 'card' } : null; });
+    });
+  }).then(function (x) { if (x) { x.home = home; B.logo = x; } return x; });
+}
+function bcNeedLogo(co) { var ex = bcExisting(co); if (!ex) return true; if (ex.rec && ex.rec.logo) return false; return !(typeof hmBrandLogo === 'function' && hmBrandLogo(ex.name)); }
+// 회사 칸 아래: 기존 클라이언트인지 / 새로 추가되는지
+function bcClientBox() {
+  var el = document.getElementById('bc-client'); if (!el) return;
+  var co = (document.getElementById('bc-company').value || '').trim(), B = window._bc || {}, lg = B.logo;
+  if (!co) { el.innerHTML = ''; return; }
+  var ex = bcExisting(co);
+  if (ex) {
+    var lgo = (typeof hmBrandLogo === 'function' ? hmBrandLogo(ex.name) : '') || (lg && lg.logo) || '', bg = (typeof hmBrandGrad === 'function' && hmBrandGrad(ex.name)) || (lg && lg.color ? 'linear-gradient(135deg,' + lg.color + ',' + (hmShade(lg.color, .62) || lg.color) + ')' : '#0f1a2e');
+    var add = !(ex.rec && ex.rec.logo) && lg && lg.logo;
+    el.innerHTML = '<div class="bc-cl"><span class="bc-lg" style="background:' + bg + '">' + (lgo ? '<img src="' + esc(lgo) + '">' : (B.logoBusy ? '<span class="spin"></span>' : esc(co.slice(0, 1)))) + '</span><div><b>' + esc(ex.name) + '</b><small>기존 클라이언트에 연락처로 추가돼요' + (add ? ' · 로고 · 브랜드 컬러도 같이 채워요' : B.logoBusy ? ' · 로고 찾는 중…' : '') + '</small></div>' + (add ? '<button type="button" onclick="window._bc.logo=null;bcClientBox()">로고 빼기</button>' : '') + '</div>';
+    return;
+  }
+  var bg2 = lg && lg.color ? 'linear-gradient(135deg,' + lg.color + ',' + (hmShade(lg.color, .62) || lg.color) + ')' : '#0f1a2e';
+  el.innerHTML = '<div class="bc-cl new"><span class="bc-lg" style="background:' + bg2 + '">' + (lg && lg.logo ? '<img src="' + lg.logo + '">' : (B.logoBusy ? '<span class="spin"></span>' : esc(co.slice(0, 1)))) + '</span><div><b>🆕 ' + esc(co) + '</b><small>' +
+    (B.logoBusy ? '로고 찾는 중…' : lg ? '새 클라이언트로 로고 · 브랜드 컬러' + (lg.color ? ' ' + lg.color : '') + '까지 저장돼요' + (lg.via === 'card' ? ' (명함 로고)' : ' (홈페이지 로고)') : '새 클라이언트로 저장돼요 (로고는 나중에 PC에서 넣을 수 있어요)') + '</small></div>' +
+    (lg ? '<button type="button" onclick="window._bc.logo=null;bcClientBox()">로고 빼기</button>' : '') + '</div>';
+}
+function bcFill(card) {
+  var got = 0, set = function (id, v) { var e = document.getElementById(id); if (v && e && !e.value) { e.value = v; got++; } };
+  var B = window._bc; B.card = card;
+  // 이메일 도메인이 같은 기존 클라이언트가 있으면 그 이름으로
+  var byDom = bcFindByDomain(bcDomain(card)), co = card.company || card.companyEn;
+  if (byDom && !bcExisting(co)) co = byDom.name;
+  set('bc-company', co); set('bc-name', card.name); set('bc-title', card.title); set('bc-dept', card.dept);
+  set('bc-phone', card.mobile || card.tel); set('bc-email', card.email);
+  if (card.tel && card.mobile) { var m = document.getElementById('bc-memo'); if (m && !m.value) m.value = '사무실 ' + card.tel; }
+  return got;
+}
+bcPhoto = function (file) {
+  if (!file) return; var b = document.getElementById('bc-photo'), st = document.getElementById('bc-ocr'); b.innerHTML = '<div class="spin dark"></div>';
+  var B = window._bc = window._bc || {}; B.logo = null; B.card = null;
+  shrink(file, 1600, .88).then(function (d) {
+    B.photo = d; b.innerHTML = '<img src="' + d.dataUrl + '" alt="명함"><input type="file" accept="image/*" capture="environment" onchange="bcPhoto(this.files[0])">';
+    st.style.display = ''; st.className = 'ex-ocr busy'; st.innerHTML = '<span class="spin dark"></span> 명함 읽는 중… (몇 초 걸려요)';
+    var ai = location.protocol === 'file:' ? Promise.reject(new Error('local')) : fetch('/api/bizcard', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: d.dataUrl.split(',')[1] }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok || !j.ok) throw new Error(j.error || ('서버 ' + r.status)); return j.card; }); });
+    return ai.then(function (card) {
+      var got = bcFill(card);
+      st.className = 'ex-ocr ' + (got ? 'ok' : 'no'); st.innerHTML = got ? '✓ ' + got + '칸 자동 입력 — 맞는지 확인해 주세요' : '글자를 찾지 못했어요. 직접 입력해 주세요.';
+      var co = (document.getElementById('bc-company').value || '').trim();
+      if (co && bcNeedLogo(co)) { B.logoBusy = 1; bcClientBox(); return bcFindLogo(card, d).catch(function () {}).then(function () { B.logoBusy = 0; bcClientBox(); }); }
+      bcClientBox();
+    }).catch(function (e) {
+      // AI 읽기가 안 되면 → 예전 방식 (구글 드라이브 글자 인식)
+      if (!drive()) { st.className = 'ex-ocr no'; st.textContent = '자동 읽기를 쓰려면 Vercel에 AI 키를 넣거나 드라이브를 연결해야 해요 — 직접 입력해 주세요'; return; }
+      return driveCall({ action: 'ocr', base64: d.dataUrl.split(',')[1], mimeType: 'image/jpeg' }).then(function (j) {
+        var o = bcParse(j.text), web = (String(j.text || '').match(/(?:https?:\/\/)?(?:www\.)[a-z0-9.-]+\.[a-z]{2,}(?:\.[a-z]{2})?/i) || [''])[0];
+        var card = { company: o.company, name: o.name, title: o.title, dept: o.dept, mobile: o.phone, tel: o.tel, email: o.email, website: web, logoBox: null };
+        var got = bcFill(card);
+        st.className = 'ex-ocr ' + (got ? 'ok' : 'no'); st.innerHTML = got ? '✓ ' + got + '칸 자동 입력 — 맞는지 확인해 주세요' : '글자를 찾지 못했어요. 직접 입력해 주세요.';
+        var co = (document.getElementById('bc-company').value || '').trim();
+        if (co && bcNeedLogo(co) && bcDomain(card)) { B.logoBusy = 1; bcClientBox(); return bcFindLogo(card, d).catch(function () {}).then(function () { B.logoBusy = 0; bcClientBox(); }); }
+        bcClientBox();
+      });
+    });
+  }).catch(function (e) { st.style.display = ''; st.className = 'ex-ocr no'; st.textContent = '자동 읽기 실패: ' + (e.message || e); });
+};
+var _bcOpen81 = bcOpen;
+bcOpen = function () {
+  var r = _bcOpen81.apply(this, arguments);
+  var co = document.getElementById('bc-company');
+  if (co) { co.insertAdjacentHTML('afterend', '<div id="bc-client"></div>'); co.addEventListener('input', function () { clearTimeout(window._bcT); window._bcT = setTimeout(bcClientBox, 250); }); }
+  return r;
+};
+// 저장: 없는 회사면 로고 · 브랜드 컬러 · 홈페이지까지 넣어 클라이언트 먼저 만들고 → 연락처 저장
+var _bcSave81 = bcSave;
+bcSave = function () {
+  var co = (document.getElementById('bc-company').value || '').trim(), nm = (document.getElementById('bc-name').value || '').trim(), B = window._bc || {}, card = B.card || {}, lg = B.logo;
+  if (co && nm) {
+    if (!Array.isArray(DB.clients)) DB.clients = [];
+    var ex = bcExisting(co), c = ex && ex.rec;
+    if (!c) { c = { id: uid('cl'), name: ex ? ex.name : co, contacts: [], memos: [], tags: [], addedBy: me.name, addedAt: nowIso(), via: '명함' }; DB.clients.push(c); }
+    var ch = false;
+    if (lg && lg.logo && !c.logo) { c.logo = lg.logo; ch = true; }
+    if (lg && lg.color && !c.brandColor) { c.brandColor = lg.color; ch = true; }
+    var home = (lg && lg.home) || bcDomain(card); if (home && !c.homepage) { c.homepage = home; ch = true; }
+    if (card.address && !c.address) { c.address = card.address; ch = true; }
+    var en = card.companyEn; if (en && bcKey(en) !== bcKey(c.name) && (c.aliases || []).map(bcKey).indexOf(bcKey(en)) < 0) { (c.aliases = c.aliases || []).push(en); ch = true; }
+    if (ch) putDoc('clients', c);
+  }
+  return _bcSave81.apply(this, arguments);
+};
+(function () {
+  var st = document.createElement('style'); st.id = 's81-style';
+  st.textContent = [
+    '#bc-client .bc-cl{display:flex;align-items:center;gap:10px;margin-top:8px;background:#f6f7f9;border:1px solid #e6e8ec;border-radius:12px;padding:8px 10px}',
+    '#bc-client .bc-cl.new{background:#f0f9fe;border-color:#cfeaf8}',
+    '#bc-client .bc-lg{flex:none;width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;overflow:hidden}',
+    '#bc-client .bc-lg img{max-width:72%;max-height:72%;object-fit:contain}',
+    '#bc-client b{display:block;font-size:14px}#bc-client small{display:block;font-size:12px;color:#6b7280;line-height:1.35}',
+    '#bc-client button{margin-left:auto;flex:none;font-size:12px;color:#6b7280;background:#fff;border:1px solid #d5d9e0;border-radius:8px;padding:4px 8px}',
+    '#bc-client .spin{width:18px;height:18px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;display:inline-block}'
+  ].join('\n');
+  document.head.appendChild(st);
+})();
+
+</script>
+<script>
+// ════ 82차 — 명함: AI 없이 OCR로만 읽기 ════
+// 글자: 구글 드라이브 OCR(연결돼 있으면) → 안 되면 폰에서 바로 Tesseract OCR(한글+영문)
+// 로고: ① 홈페이지 · 회사 이메일 도메인의 아이콘 → ② 명함 사진에서 색이 있는 덩어리(로고)를 찾아 잘라냄
+var BC_TESS = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+function bcLoadTess() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (window._bcTessP) return window._bcTessP;
+  return window._bcTessP = new Promise(function (ok, no) { var s = document.createElement('script'); s.src = BC_TESS; s.onload = function () { ok(window.Tesseract); }; s.onerror = function () { window._bcTessP = null; no(new Error('글자 인식 도구를 불러오지 못했어요')); }; document.head.appendChild(s); });
+}
+// 글자 인식이 잘 되도록 흑백 · 대비 올린 사본
+function bcOcrPrep(dataUrl) {
+  return new Promise(function (ok) {
+    var im = new Image();
+    im.onload = function () {
+      var sc = Math.min(1, 1600 / Math.max(im.naturalWidth, im.naturalHeight)), w = Math.round(im.naturalWidth * sc), h = Math.round(im.naturalHeight * sc);
+      var c = document.createElement('canvas'); c.width = w; c.height = h; var x = c.getContext('2d'); x.drawImage(im, 0, 0, w, h);
+      var g = x.getImageData(0, 0, w, h), d = g.data;
+      for (var i = 0; i < d.length; i += 4) { var y = .299 * d[i] + .587 * d[i + 1] + .114 * d[i + 2]; y = Math.max(0, Math.min(255, (y - 128) * 1.5 + 140)); d[i] = d[i + 1] = d[i + 2] = y; }
+      x.putImageData(g, 0, 0); ok(c.toDataURL('image/jpeg', .92));
+    };
+    im.onerror = function () { ok(dataUrl); }; im.src = dataUrl;
+  });
+}
+function bcTessRead(dataUrl, onProg) {
+  return bcLoadTess().then(function (T) {
+    return bcOcrPrep(dataUrl).then(function (src) {
+      return T.recognize(src, 'kor+eng', { logger: function (m) { if (onProg && m && m.status === 'recognizing text') onProg(Math.round((m.progress || 0) * 100)); } });
+    });
+  }).then(function (r) { return (r && r.data && r.data.text) || ''; });
+}
+// 명함 사진에서 색이 있는 가장 큰 덩어리 = 로고 자리 (0~1000 좌표)
+function bcColorBox(dataUrl) {
+  return new Promise(function (ok) {
+    var im = new Image();
+    im.onload = function () {
+      try {
+        var W = 160, H = Math.max(1, Math.round(im.naturalHeight * W / im.naturalWidth));
+        var c = document.createElement('canvas'); c.width = W; c.height = H; var x = c.getContext('2d'); x.drawImage(im, 0, 0, W, H);
+        var d = x.getImageData(0, 0, W, H).data, m = new Uint8Array(W * H);
+        for (var i = 0; i < W * H; i++) {
+          var r = d[i * 4] / 255, g = d[i * 4 + 1] / 255, b = d[i * 4 + 2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, s = mx === mn ? 0 : (l > .5 ? (mx - mn) / (2 - mx - mn) : (mx - mn) / (mx + mn));
+          m[i] = s > .38 && l > .15 && l < .85 ? 1 : 0;
+        }
+        // 가까운 색 픽셀끼리 묶기 (글자 사이 틈 메우려고 2칸까지 이어 봄)
+        var seen = new Uint8Array(W * H), best = null;
+        for (var p = 0; p < W * H; p++) {
+          if (!m[p] || seen[p]) continue;
+          var q = [p], n = 0, x0 = W, y0 = H, x1 = 0, y1 = 0; seen[p] = 1;
+          while (q.length) {
+            var k = q.pop(), kx = k % W, ky = (k / W) | 0; n++;
+            if (kx < x0) x0 = kx; if (kx > x1) x1 = kx; if (ky < y0) y0 = ky; if (ky > y1) y1 = ky;
+            for (var dy = -2; dy <= 2; dy++) for (var dx = -2; dx <= 2; dx++) {
+              var nx = kx + dx, ny = ky + dy; if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+              var nk = ny * W + nx; if (m[nk] && !seen[nk]) { seen[nk] = 1; q.push(nk); }
+            }
+          }
+          if (!best || n > best.n) best = { n: n, x0: x0, y0: y0, x1: x1, y1: y1 };
+        }
+        if (!best) { ok(null); return; }
+        var area = (best.x1 - best.x0 + 1) * (best.y1 - best.y0 + 1);
+        if (best.n < W * H * 0.002 || area > W * H * 0.45) { ok(null); return; } // 너무 작거나(점) 명함 전체가 색이면 제외
+        ok([best.x0 / W * 1000, best.y0 / H * 1000, (best.x1 + 1) / W * 1000, (best.y1 + 1) / H * 1000].map(Math.round));
+      } catch (e) { ok(null); }
+    };
+    im.onerror = function () { ok(null); }; im.src = dataUrl;
+  });
+}
+// 글자 → 칸 (기존 규칙 + 홈페이지 · 'M.' 'T.' 표기 · 영문 회사명)
+function bcParse2(t) {
+  t = String(t || '').replace(/[|｜]/g, ' ').replace(/[ \t]+/g, ' ');
+  var o = bcParse(t), lines = t.split(/\n/).map(function (l) { return l.trim(); }).filter(Boolean);
+  var web = (t.match(/(?:https?:\/\/)?(?:www\.)[a-z0-9-]+(?:\.[a-z0-9-]+)+/i) || [''])[0]; if (web) o.website = web;
+  if (!o.phone) { var mm = t.match(/(?:M|Mobile|H\.?P|휴대폰|핸드폰)[\s.:)]*((?:\+?82[-\s.]?)?0?1[016789][-\s.)]?\d{3,4}[-\s.]?\d{4})/i); if (mm) o.phone = mm[1].replace(/^\+?82[-\s.]?/, '0').replace(/[\s.)]/g, '-').replace(/-+/g, '-'); }
+  if (!o.tel) { var tm = t.match(/(?:T|Tel|TEL|전화|대표)[\s.:)]*(0\d{1,2}[-\s.)]?\d{3,4}[-\s.]?\d{4})/); if (tm) o.tel = tm[1].replace(/[\s.)]/g, '-'); }
+  if (!o.company) { var en = lines.find(function (l) { return /(co\.?,?\s*ltd|corp(oration)?|inc\.?|company|korea|group)\b/i.test(l) && l.length <= 40; }); if (en) o.companyEn = en.replace(/\s*(co\.?,?\s*ltd\.?|corp(oration)?\.?|inc\.?)\s*$/i, '').trim(); }
+  if (o.email) o.email = o.email.replace(/\s/g, '');
+  // 회사: (주)OO · OO(주) · 주식회사 OO 만 정확히
+  var cm = t.match(/(?:\(주\)|㈜|주식회사)[ \t]*([가-힣A-Za-z0-9&·]{2,20})/) || t.match(/([가-힣A-Za-z0-9&·]{2,20})[ \t]*(?:\(주\)|㈜)/);
+  var known = null;
+  try {
+    var names = []; (DB.clients || []).forEach(function (c) { names.push(c.name); (c.aliases || []).forEach(function (a) { names.push(a); }); }); (DB.projects || []).forEach(function (p) { if (p && p.client) names.push(p.client); });
+    var flat = t.replace(/\s/g, '').toLowerCase();
+    names.forEach(function (n) { var k = String(n || '').replace(/\(주\)|㈜|주식회사|\s/g, '').toLowerCase(); if (k.length >= 2 && flat.indexOf(k) >= 0 && (!known || k.length > known.k.length)) known = { n: n, k: k }; });
+  } catch (e) {}
+  var deptLike = function (x) { return /(팀|사업부|본부|그룹|센터|실|부)$/.test(String(x || '').trim()) && /\s|사업부|팀$/.test(String(x || '')); };
+  if (cm) o.company = cm[1];
+  else if (known) o.company = known.n;
+  else if (o.company && (/www\.|@|https?:/i.test(o.company) || deptLike(o.company))) { if (!o.dept && deptLike(o.company)) o.dept = o.company; o.company = ''; }
+  // 사무실 전화: T. 표기 우선, 휴대폰과 같으면 버림
+  var tt = t.match(/(?:^|\s)(?:T|Tel|TEL|전화|대표)[\s.:)]*(0(?!1)\d{0,2}[-\s.)]?\d{3,4}[-\s.]?\d{4})/); if (tt) o.tel = tt[1].replace(/[\s.)]/g, '-');
+  if (o.tel && o.phone && o.tel.replace(/\D/g, '') === o.phone.replace(/\D/g, '')) delete o.tel;
+  // 이름: 줄 맨 앞 한글 2~4자 (글자 사이 띄어쓰기 허용) — 부서 · 회사 · 직급 줄은 제외
+  var cand = [];
+  lines.forEach(function (l, i) {
+    var m = l.match(/^([가-힣](?:\s?[가-힣]){1,3})(?=$|[\s_.,|·\-/])/); if (!m) return;
+    var nm = m[1].replace(/\s/g, ''); if (nm.length < 2 || nm.length > 4) return;
+    if (/(팀|부|실|본부|센터|그룹|사업|회사|전자|주식|코리아)$/.test(nm) || BC_TITLES.indexOf(nm) >= 0 || nm === o.company || (o.company && o.company.indexOf(nm) >= 0)) return;
+    var score = (BC_TITLES.some(function (x) { return l.indexOf(x) >= 0; }) ? 3 : 0) + (/\s/.test(m[1]) ? 2 : 0) + (nm.length === 3 ? 2 : 0);
+    cand.push({ nm: nm, s: score });
+  });
+  cand.sort(function (a, b) { return b.s - a.s; });
+  if (cand.length && (!o.name || cand[0].s >= 3)) o.name = cand[0].nm;
+  // 직급: 이름 줄에 있는 것 우선 (책임 매니저처럼 두 단어도)
+  var nl = lines.find(function (l) { return o.name && l.replace(/\s/g, '').indexOf(o.name) === 0; });
+  if (nl) { var rest = nl.replace(/\s/g, '').slice(o.name.length).replace(/^[_.,|·\-/]+/, ''); var t2 = BC_TITLES.filter(function (x) { return rest.indexOf(x) >= 0; }); if (t2.length) o.title = t2.sort(function (a, b) { return rest.indexOf(a) - rest.indexOf(b); }).join(' '); }
+  // 회사를 못 찾았으면: 위쪽 줄 중 이름 · 직급 · 부서가 아닌 짧은 글자 줄
+  if (!o.company) {
+    var top = lines.slice(0, 4).find(function (l) {
+      var z = l.replace(/\s/g, '');
+      return /^[가-힣A-Za-z&·]{2,24}$/.test(z) && z !== o.name && BC_TITLES.indexOf(z) < 0 && !deptLike(l) && !/(팀|부|실)$/.test(z) && !BC_TITLES.some(function (x) { return z.indexOf(x) >= 0 && z.length - x.length <= 4; });
+    });
+    if (top) o.company = top.replace(/\s+/g, ' ');
+  }
+  return o;
+}
+bcPhoto = function (file) {
+  if (!file) return; var b = document.getElementById('bc-photo'), st = document.getElementById('bc-ocr'); b.innerHTML = '<div class="spin dark"></div>';
+  var B = window._bc = window._bc || {}; B.logo = null; B.card = null; B.logoTried = 0;
+  shrink(file, 1800, .9).then(function (d) {
+    B.photo = d; b.innerHTML = '<img src="' + d.dataUrl + '" alt="명함"><input type="file" accept="image/*" capture="environment" onchange="bcPhoto(this.files[0])">';
+    st.style.display = ''; st.className = 'ex-ocr busy'; st.innerHTML = '<span class="spin dark"></span> 명함 글자 읽는 중…';
+    var prog = function (n) { st.innerHTML = '<span class="spin dark"></span> 명함 글자 읽는 중… ' + n + '%' + (n < 5 ? ' (처음 한 번은 인식 도구를 받느라 조금 걸려요)' : ''); };
+    var viaDrive = drive() ? driveCall({ action: 'ocr', base64: d.dataUrl.split(',')[1], mimeType: 'image/jpeg' }).then(function (j) { if (!j || !String(j.text || '').trim()) throw new Error('empty'); return j.text; }) : Promise.reject(new Error('no drive'));
+    return viaDrive.catch(function () { return bcTessRead(d.dataUrl, prog); }).then(function (text) {
+      var o = bcParse2(text);
+      var card = { company: o.company || '', companyEn: o.companyEn || '', name: o.name, title: o.title, dept: o.dept, mobile: o.phone, tel: o.tel, email: o.email, website: o.website, logoBox: null };
+      var got = bcFill(card);
+      st.className = 'ex-ocr ' + (got ? 'ok' : 'no'); st.innerHTML = got ? '✓ ' + got + '칸 자동 입력 — 맞는지 확인해 주세요' : '글자를 찾지 못했어요. 밝은 곳에서 명함만 꽉 차게 다시 찍어 주세요.';
+      var co = (document.getElementById('bc-company').value || '').trim(); B.logoTried = 1;
+      if (!co || !bcNeedLogo(co)) { bcClientBox(); return; }
+      B.logoBusy = 1; bcClientBox();
+      return bcColorBox(d.dataUrl).then(function (box) { card.logoBox = box; return bcFindLogo(card, d); }).catch(function () {}).then(function () { B.logoBusy = 0; bcClientBox(); });
+    });
+  }).catch(function (e) { st.style.display = ''; st.className = 'ex-ocr no'; st.textContent = '자동 읽기 실패: ' + (e.message || e) + ' — 직접 입력해 주세요'; });
+};
+// 회사 칸을 나중에 직접 입력해도 → 새 회사면 로고 찾아 보기
+(function () {
+  var _box = bcClientBox;
+  bcClientBox = function () {
+    var r = _box.apply(this, arguments), B = window._bc || {}, co = ((document.getElementById('bc-company') || {}).value || '').trim();
+    if (co && B.photo && !B.logo && !B.logoBusy && !B.logoTried && bcNeedLogo(co)) {
+      B.logoTried = 1; B.logoBusy = 1; _box();
+      var card = B.card || {};
+      bcColorBox(B.photo.dataUrl).then(function (box) { card.logoBox = box; return bcFindLogo(card, B.photo); }).catch(function () {}).then(function () { B.logoBusy = 0; _box(); });
+    }
+    return r;
+  };
+})();
+
+</script>
 </body>
 </html>
