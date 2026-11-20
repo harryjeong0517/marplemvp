@@ -5669,5 +5669,13 @@ vMore = function () {
 };
 
 </script>
+<script>
+// 78차 — 캘린더 TV 전용 계정(calendar)은 로그인하면 TV 화면(/tv)으로
+(function () {
+  var isTv = function (u) { return !!u && (u.id === 'calendar' || u.role === 'tv' || u.tvOnly); };
+  var go = function (u) { try { var h = 5381, s = String(u.pw || ''); for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; localStorage.setItem('marple_tv_login', JSON.stringify({ id: u.id, h: String(h >>> 0) })); } catch (e) {} location.replace('/tv'); };
+  if (typeof start === 'function') { var _s = start; start = function (u) { if (isTv(u)) return go(u); return _s.apply(this, arguments); }; }
+})();
+</script>
 </body>
 </html>

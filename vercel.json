@@ -1,6 +1,20 @@
 {
   "rewrites": [
-    { "source": "/m", "destination": "/m.html" },
-    { "source": "/m/", "destination": "/m.html" }
+    {
+      "source": "/m",
+      "destination": "/m.html"
+    },
+    {
+      "source": "/m/",
+      "destination": "/m.html"
+    },
+    {
+      "source": "/tv",
+      "destination": "/tv.html"
+    },
+    {
+      "source": "/tv/",
+      "destination": "/tv.html"
+    }
   ]
 }

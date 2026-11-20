@@ -21651,5 +21651,14 @@ setTimeout(function () { try { tiAutoMatch(); } catch (e) {} }, 6000);
 ].join('\n'); document.head.appendChild(st); })();
 
 </script>
+<script>
+// 78차 — 캘린더 TV 전용 계정(calendar)은 로그인하면 TV 화면(/tv)으로
+function tvOnlyUser(u) { return !!u && (u.id === 'calendar' || u.role === 'tv' || u.tvOnly); }
+function tvGo(u) { try { var h = 5381, s = String(u.pw || ''); for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; localStorage.setItem('marple_tv_login', JSON.stringify({ id: u.id, h: String(h >>> 0) })); } catch (e) {} location.replace('/tv'); }
+(function () {
+  if (typeof doLogin === 'function') { var _tvDL = doLogin; doLogin = function () { var el = document.getElementById('login-id'), pw = document.getElementById('login-pw'); var u = el && pw && (DB.users || []).find(function (x) { return x.id === el.value.trim() && x.pw === pw.value && x.status === 'active'; }); if (tvOnlyUser(u)) return tvGo(u); return _tvDL.apply(this, arguments); }; }
+  setInterval(function () { try { if (tvOnlyUser(currentUser)) tvGo(currentUser); } catch (e) {} }, 1500);
+})();
+</script>
 </body>
 </html>
