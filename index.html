@@ -2594,7 +2594,7 @@ nav .nav-section.rn-old { display: none !important; }
             <select class="form-select" id="st-tax-filter" style="width:auto;" onchange="renderSettlementPaymentTable()">
               <option value="">전체 세금 방식</option>
               <option value="vat">부가세 포함 (VAT 10%)</option>
-              <option value="withhold">원천징수 (3.3%)</option>
+              <option value="withhold">원천징수</option>
               <option value="none">세금 없음</option>
             </select>
             <select class="form-select" id="st-team-filter" style="width:auto;" onchange="renderSettlementPaymentTable()">
@@ -2970,7 +2970,7 @@ nav .nav-section.rn-old { display: none !important; }
           </button>
           <button id="tax-btn-withhold" onclick="setTaxMode('withhold')"
             style="flex:1;padding:11px 8px;border-radius:var(--r);border:1.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-size:13px;font-weight:600;transition:all 0.15s;font-family:inherit;line-height:1.3;">
-            📋 원천징수<br><span style="font-size:11px;font-weight:400;">(3.3%)</span>
+            👥 단기인력 · 프리랜서<br><span style="font-size:11px;font-weight:400;">(원천징수 8.8% · 3.3% · 일용)</span>
           </button>
           <button id="tax-btn-none" onclick="setTaxMode('none')"
             style="flex:1;padding:11px 8px;border-radius:var(--r);border:1.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-size:13px;font-weight:600;transition:all 0.15s;font-family:inherit;line-height:1.3;">
@@ -5111,7 +5111,7 @@ function renderProjectDetail(p) {
                     + '<td style="font-size:11px;color:var(--text3);font-family:Pretendard,sans-serif;font-variant-numeric:tabular-nums;">'+(gp.bank||'—')+'</td>'
                     + '<td class="num" style="color:var(--text3);">'+fmt(gp.estimateTotal||0)+'</td>'
                     + '<td class="num" style="color:var(--text2);">'+fmt(gp.baseAmount||0)+'</td>'
-                    + '<td>'+(gp.taxMode==='vat'?'<span class="badge badge-blue" style="font-size:10px;">부가세 10%</span>':gp.taxMode==='withhold'?'<span class="badge badge-orange" style="font-size:10px;">원천징수 3.3%</span>':'<span class="badge badge-gray" style="font-size:10px;">세금없음</span>')+'</td>'
+                    + '<td>'+(gp.taxMode==='vat'?'<span class="badge badge-blue" style="font-size:10px;">부가세 10%</span>':gp.taxMode==='withhold'?'<span class="badge badge-orange" style="font-size:10px;">원천징수 '+whS(gp)+'</span>':'<span class="badge badge-gray" style="font-size:10px;">세금없음</span>')+'</td>'
                     + '<td class="num" style="font-weight:700;color:var(--blue);">'+fmt(gp.received||0)+'</td>'
                     + '<td>'+gp.date+'</td>'
                     + '<td onclick="openPaymentModal(\'' + p.id + '\',\'' + gp.itemIds[0] + '\',\'' + gp.id + '\');event.stopPropagation();" style="cursor:pointer;">'
@@ -5169,7 +5169,7 @@ function renderProjectDetail(p) {
                     ${pay.taxMode === 'vat'
                       ? '<span class="badge badge-blue" style="font-size:10px;">부가세 10%</span>'
                       : pay.taxMode === 'withhold'
-                      ? '<span class="badge badge-orange" style="font-size:10px;">원천징수 3.3%</span>'
+                      ? '<span class="badge badge-orange" style="font-size:10px;">원천징수 '+whS(pay)+'</span>'
                       : '<span class="badge badge-gray" style="font-size:10px;">세금없음</span>'}
                   </td>
                   <td class="num" style="font-weight:700;color:var(--blue);">${fmt(pay.received)}</td>
@@ -5815,9 +5815,9 @@ function calcPayment() {
     taxLabel  = `부가세 (10%)`;
   } else if (mode === 'withhold') {
     // 원천징수: 공급가액 × 3.3% 차감
-    taxAmount = Math.round(supply * 0.033);
+    taxAmount = whPayTax(supply);
     finalAmt  = supply - taxAmount;            // 최종 = 공급가 - 원천징수
-    taxLabel  = `원천징수 (3.3%)`;
+    taxLabel  = '원천징수';
   } else {
     // 세금 없음: 공급가 = 최종
     taxAmount = 0;
@@ -5886,12 +5886,13 @@ function saveAndResubmit() {
   const mode = _taxMode;
   let finalAmt = 0, taxAmount = 0;
   if (mode === 'vat')           { taxAmount = Math.round(baseAmt*0.1);   finalAmt = baseAmt + taxAmount; }
-  else if (mode === 'withhold') { taxAmount = Math.round(baseAmt*0.033); finalAmt = baseAmt - taxAmount; }
+  else if (mode === 'withhold') { taxAmount = whPayTax(baseAmt); finalAmt = baseAmt - taxAmount; }
   else                          { taxAmount = 0; finalAmt = baseAmt; }
 
   pay.received    = finalAmt;
   pay.baseAmount  = baseAmt;
   pay.taxMode     = mode;
+  pay.whType      = mode === 'withhold' ? _whType : undefined;
   pay.taxAmount   = taxAmount;
   pay.company     = document.getElementById('pay-company').value.trim();
   pay.person      = document.getElementById('pay-person').value.trim();
@@ -5940,12 +5941,12 @@ function savePayment() {
   const mode = _taxMode;
   let finalAmt = 0, taxAmount = 0;
   if (mode === 'vat')           { taxAmount = Math.round(baseAmt*0.1);   finalAmt = baseAmt + taxAmount; }
-  else if (mode === 'withhold') { taxAmount = Math.round(baseAmt*0.033); finalAmt = baseAmt - taxAmount; }
+  else if (mode === 'withhold') { taxAmount = whPayTax(baseAmt); finalAmt = baseAmt - taxAmount; }
   else                          { taxAmount = 0; finalAmt = baseAmt; }
 
   const totalEstimate = selectedIds.reduce((s, iid) => s + (p.items.find(i=>i.id===iid)?.total||0), 0);
   const commonData = {
-    received: finalAmt, baseAmount: baseAmt, taxMode: mode, taxAmount,
+    received: finalAmt, baseAmount: baseAmt, taxMode: mode, taxAmount, whType: mode === 'withhold' ? _whType : undefined,
     estimateTotal: totalEstimate,
     company: document.getElementById('pay-company').value.trim(),
     person:  document.getElementById('pay-person').value.trim(),
@@ -6403,7 +6404,7 @@ function setStTab(tab) {
   renderSettlementPaymentTable();
 }
 
-const TAX_LABELS = { vat: '부가세 포함 (VAT 10%)', withhold: '원천징수 (3.3%)', none: '세금 없음', '': '전체' };
+const TAX_LABELS = { vat: '부가세 포함 (VAT 10%)', withhold: '원천징수', none: '세금 없음', '': '전체' };
 const TAX_BADGE  = { vat: 'badge-blue', withhold: 'badge-orange', none: 'badge-gray' };
 
 function renderSettlementPage() {
@@ -9361,7 +9362,7 @@ function renderPaymentsPage() {
               ${pay.taxMode === 'vat'
                 ? '<span class="badge badge-blue" style="font-size:9px;padding:1px 6px;">VAT 10%</span>'
                 : pay.taxMode === 'withhold'
-                ? '<span class="badge badge-orange" style="font-size:9px;padding:1px 6px;">원천 3.3%</span>'
+                ? '<span class="badge badge-orange" style="font-size:9px;padding:1px 6px;">원천 '+whS(pay)+'</span>'
                 : '<span class="badge badge-gray" style="font-size:9px;padding:1px 6px;">세금없음</span>'}
             </div>
           </td>
@@ -16034,7 +16035,7 @@ function plCtxPay() { if (!currentPaymentContext) return null; var c = currentPa
 function plFmt(f, v, p) {
   if (v == null || v === '') return '(없음)';
   if (f[2] === 'won') return Math.round(+v || 0).toLocaleString('ko-KR') + '원';
-  if (f[2] === 'tax') return { vat: '부가세 10%', withhold: '원천징수 3.3%', none: '세금 없음' }[v] || v;
+  if (f[2] === 'tax') return { vat: '부가세 10%', withhold: '원천징수', none: '세금 없음' }[v] || v;
   if (f[2] === 'items') return (v || []).map(function (id) { var i = p && (p.items || []).find(function (x) { return x.id === id; }); return i ? i.name : id; }).join(', ');
   return String(v);
 }
@@ -16595,9 +16596,9 @@ function pp2Page(rec, pages, skipped) {
     banner +
     '<div><div class="lab">견적 항목</div><div class="items">' + itemsHTML + '</div></div>' +
     '<div class="g2"><div><div class="lab">견적금액</div><div class="f blue">' + pp2Fmt(est) + '</div></div><div><div class="lab">공급가액</div><div class="f">' + pp2Fmt(base) + '</div></div></div>' +
-    '<div><div class="lab">세금 방식</div><div class="g3">' + tx('vat', '📊', '부가세 포함', '(VAT 10%)') + tx('withhold', '🧾', '원천징수', '(3.3%)') + tx('none', '―', '세금 없음', '&nbsp;') + '</div></div>' +
+    '<div><div class="lab">세금 방식</div><div class="g3">' + tx('vat', '📊', '부가세 포함', '(VAT 10%)') + tx('withhold', '🧾', '원천징수', '(' + (pay.taxMode === 'withhold' ? whT(whOf(pay)).name : '8.8% · 3.3% · 일용') + ')') + tx('none', '―', '세금 없음', '&nbsp;') + '</div></div>' +
     '<div class="calc"><div class="r">견적금액<b>' + pp2Fmt(est) + '원</b></div><div class="r">공급가액<b>' + pp2Fmt(base) + '원</b></div>' +
-      (pay.taxMode === 'vat' ? '<div class="r">부가세 (10%)<b>+ ' + pp2Fmt(tax) + '원</b></div>' : pay.taxMode === 'withhold' ? '<div class="r">원천징수 (3.3%)<b>- ' + pp2Fmt(tax) + '원</b></div>' : '') +
+      (pay.taxMode === 'vat' ? '<div class="r">부가세 (10%)<b>+ ' + pp2Fmt(tax) + '원</b></div>' : pay.taxMode === 'withhold' ? '<div class="r">원천징수 (' + whS(pay) + ')<b>- ' + pp2Fmt(tax) + '원</b></div>' : '') +
       '<div class="fin"><span>최종 입금금액</span><b>' + pp2Fmt(fin) + '<small>원</small></b></div></div>' +
     '<div class="profit"><span>수익금액<small>(견적 - 공급가액)</small></span><b>' + pp2Fmt(est - base) + '원</b></div>' +
     '<hr><div class="g2">' + f('입금업체', pay.company) + f('담당자 이름', pay.person) + f('담당자 연락처', pay.contact) + f('통장번호', pay.bank) + f('입금일자', pay.date) + f('메모', pay.memo) + '</div>' +
@@ -17577,7 +17578,7 @@ var PP_ST = { paid: ['입금 완료', 'badge-green'], ready: ['지급 대기', '
 function ppTaxDocLabel(x) {
   var m = x.pay.taxMode;
   if (m === 'vat') return x.pay.taxDoc && x.pay.taxDoc.ok ? '<button class="pp-td ok" onclick="ppTaxDoc(\'' + x.p.id + '\',\'' + x.itemId + '\',\'' + x.gpId + '\',false)" title="' + qtEsc((x.pay.taxDoc.by || '') + ' ' + (x.pay.taxDoc.at || '').slice(0, 10)) + '">✓ 계산서 수취</button>' : '<button class="pp-td" onclick="ppTaxDoc(\'' + x.p.id + '\',\'' + x.itemId + '\',\'' + x.gpId + '\',true)">계산서 미수취</button>';
-  if (m === 'withhold') return '<span class="pp-td gray">원천징수 3.3%</span>';
+  if (m === 'withhold') return '<span class="pp-td gray">원천징수 ' + whS(x.pay) + '</span>';
   return '<span class="pp-td gray">세금 없음</span>';
 }
 function ppFind(pid, itemId, gpId) { var p = DB.projects.find(function (x) { return x.id === pid; }); return p ? getPayForContext(pid, itemId, gpId || null) : null; }
@@ -17661,7 +17662,7 @@ function ppExcel() {
   if (typeof XLSX === 'undefined') { showToast('엑셀 도구를 불러오지 못했어요', 'error'); return; }
   var R = ppRange(), st = { paid: '입금 완료', ready: '지급 대기', ing: '결재 중' };
   var data = [['지급일', '업체', '담당자', '연락처', '계좌', '프로젝트', '항목', '공급가액', '세금방식', '지급액', '계산서', '상태', '입금 확인']].concat(ppFiltered().map(function (x) {
-    return [x.date, x.pay.company || '', x.pay.person || '', x.pay.contact || '', x.pay.bank || '', x.p.name, x.items, +x.pay.baseAmount || 0, { vat: '부가세 10%', withhold: '원천징수 3.3%' }[x.pay.taxMode] || '세금 없음', +x.pay.received || 0, x.pay.taxMode === 'vat' ? (x.pay.taxDoc && x.pay.taxDoc.ok ? '수취' : '미수취') : '-', st[x.st] || '', x.pay.depositConfirmedBy ? x.pay.depositConfirmedBy + ' ' + (x.pay.depositConfirmedAt || '') : ''];
+    return [x.date, x.pay.company || '', x.pay.person || '', x.pay.contact || '', x.pay.bank || '', x.p.name, x.items, +x.pay.baseAmount || 0, { vat: '부가세 10%', withhold: '원천징수 ' + whS(x.pay) }[x.pay.taxMode] || '세금 없음', +x.pay.received || 0, x.pay.taxMode === 'vat' ? (x.pay.taxDoc && x.pay.taxDoc.ok ? '수취' : '미수취') : '-', st[x.st] || '', x.pay.depositConfirmedBy ? x.pay.depositConfirmedBy + ' ' + (x.pay.depositConfirmedAt || '') : ''];
   }));
   var ws = XLSX.utils.aoa_to_sheet(data); ws['!cols'] = [10, 18, 10, 14, 24, 24, 24, 12, 12, 12, 8, 10, 18].map(function (w) { return { wch: w }; });
   var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '지급 일정');
@@ -17963,7 +17964,7 @@ function sfDone(s) { return !!((s.ciOut || s.out) && (s.ciIn || s.in)); }
 function sfLaborEstimate(p) { return (p.items || []).filter(function (i) { return /인건비|인력|스태프|진행\s*요원|알바|아르바이트|도우미|MANPOWER|STAFF/i.test((i.category || '') + ' ' + (i.name || '')); }); }
 function sfSum(p) {
   var l = p.staffPay || [], g = 0, tax = 0, h = 0, paidN = 0;
-  l.forEach(function (s) { var x = sfGross(s); if (!x) return; paidN++; g += x; tax += sfTax(x).sum; h += sfHours(s); });
+  l.forEach(function (s) { var x = sfGross(s); if (!x) return; paidN++; g += x; tax += sfTax(x, s).sum; h += sfHours(s); });
   var est = sfLaborEstimate(p).reduce(function (a, i) { return a + (+i.total || 0); }, 0);
   return { n: l.length, in: l.filter(function (s) { return s.ciIn || s.in; }).length, gross: g, tax: tax, net: g - tax, hours: h, est: est, paidN: paidN,
     warn: l.filter(function (s) { return !s.contractOk || !s.idOk || !s.bank; }).map(function (s) { return s.name + (!s.contractOk ? ' 계약서' : '') + (!s.idOk ? ' 신분증' : '') + (!s.bank ? ' 계좌' : '') + ' 미확인'; }) };
@@ -17972,13 +17973,13 @@ var SF = { open: {} };
 function sfCardHTML(p) {
   var l = p.staffPay || [], S = sfSum(p), E = qtEsc, open = SF.open[p.id] || l.length > 0;
   var rows = l.map(function (s, i) {
-    var g = sfGross(s), t = sfTax(g), inp = function (k, w, ph, type) { return '<input class="sf-in" style="width:' + w + 'px" value="' + E(s[k] == null ? '' : s[k]) + '" placeholder="' + (ph || '') + '"' + (type ? ' type="' + type + '"' : '') + ' onchange="sfSet(\'' + p.id + '\',' + i + ',\'' + k + '\',this.value)">'; };
+    var g = sfGross(s), t = sfTax(g, s), inp = function (k, w, ph, type) { return '<input class="sf-in" style="width:' + w + 'px" value="' + E(s[k] == null ? '' : s[k]) + '" placeholder="' + (ph || '') + '"' + (type ? ' type="' + type + '"' : '') + ' onchange="sfSet(\'' + p.id + '\',' + i + ',\'' + k + '\',this.value)">'; };
     var ci = s.ciIn || s.ciOut ? '<div class="sf-ci" title="출근 체크 링크로 찍은 시각">📍 ' + E((s.ciIn || '').slice(11, 16) || '–') + ' ~ ' + E((s.ciOut || '').slice(11, 16) || '–') + '</div>' : '';
     var st = sfDone(s) && s.contractOk && s.idOk ? ['완료', 'ok'] : !(s.ciIn || s.in) ? ['출근 전', 'gray'] : !s.contractOk ? ['계약서 대기', 'warn'] : !s.idOk ? ['신분증 대기', 'warn'] : ['근무 중', 'blue'];
     return '<tr><td>' + inp('name', 70, '이름') + '</td><td>' + inp('role', 96, '역할') + '</td><td>' + inp('dates', 76, '10/30') + '<input class="sf-in" style="width:34px;margin-left:2px" value="' + E(s.days || 1) + '" title="일수" onchange="sfSet(\'' + p.id + '\',' + i + ',\'days\',this.value)">일</td>' +
       '<td>' + inp('in', 98, '', 'time') + ci + '</td><td>' + inp('out', 98, '', 'time') + '</td><td>' + inp('brk', 46, '1:00') + '</td>' +
       '<td><select class="sf-in" onchange="sfSet(\'' + p.id + '\',' + i + ',\'rateType\',this.value)"><option value="hour"' + (s.rateType !== 'day' ? ' selected' : '') + '>시급</option><option value="day"' + (s.rateType === 'day' ? ' selected' : '') + '>일당</option></select>' + inp('rate', 78, '12,000') + '</td>' +
-      '<td class="num">' + (sfHours(s) ? sfHours(s).toFixed(1) : '–') + '</td><td class="num"><b>' + (g ? fmtN(g) : '–') + '</b></td><td class="num sf-mute">' + (g ? (t.sum ? '-' + fmtN(t.sum) : '0') : '–') + '</td><td class="num sf-net">' + (g ? fmtN(g - t.sum) : '–') + '</td>' +
+      '<td class="num">' + (sfHours(s) ? sfHours(s).toFixed(1) : '–') + '</td><td class="num"><b>' + (g ? fmtN(g) : '–') + '</b></td><td class="num sf-mute">' + whSel(p.id, i, s) + ' ' + (g ? (t.sum ? '-' + fmtN(t.sum) : '0') : '–') + '</td><td class="num sf-net">' + (g ? fmtN(g - t.sum) : '–') + '</td>' +
       '<td class="sf-c"><input type="checkbox"' + (s.idOk ? ' checked' : '') + ' onchange="sfSet(\'' + p.id + '\',' + i + ',\'idOk\',this.checked)"></td><td class="sf-c"><input type="checkbox"' + (s.contractOk ? ' checked' : '') + ' onchange="sfSet(\'' + p.id + '\',' + i + ',\'contractOk\',this.checked)"></td>' +
       '<td>' + inp('bank', 130, '은행 계좌') + '</td><td>' + inp('phone', 108, '010-') + '</td><td><span class="sf-st ' + st[1] + '">' + st[0] + '</span></td>' +
       '<td style="white-space:nowrap"><button class="sf-x" title="출근 체크 링크 복사" onclick="sfLink(\'' + p.id + '\',' + i + ')">🔗</button><button class="sf-x" title="삭제" onclick="sfDel(\'' + p.id + '\',' + i + ')">✕</button></td></tr>';
@@ -17987,10 +17988,10 @@ function sfCardHTML(p) {
   return '<div class="card sf-card" id="sf-card"><div class="sf-top" onclick="if(event.target.closest(\'button\'))return;SF.open[\'' + p.id + '\']=!(' + (open ? 'true' : 'false') + ');renderProjectDetail(DB.projects.find(function(x){return x.id===\'' + p.id + '\'}))">' +
       '<b>👥 단기 인력 · 인건비</b><span class="sf-mini">' + (l.length ? S.n + '명 · 실지급 ' + fmt(S.net) + (S.est ? ' · 견적 인건비 ' + fmt(S.est) : '') : '진행요원 · 알바 · 통역 등 현장 인력의 근무시간과 인건비를 계산해요') + '</span>' +
       '<span style="margin-left:auto;display:flex;gap:6px"><button class="btn btn-secondary btn-sm" onclick="sfFromSheet(\'' + p.id + '\')">🗂 운영 시트 스태프 불러오기</button><button class="btn btn-primary btn-sm" onclick="sfAdd(\'' + p.id + '\')">+ 인력 추가</button></span></div>' +
-    (open && l.length ? '<div class="sf-sum"><div><small>투입 인력</small><b>' + S.n + '명</b><span>출근 ' + S.in + ' · 대기 ' + (S.n - S.in) + '</span></div><div><small>총 근무</small><b>' + (Math.round(S.hours * 10) / 10) + '시간</b><span>휴게 제외</span></div><div><small>지급액 (세전)</small><b>' + fmtN(S.gross) + '</b><span>원</span></div><div><small>원천징수 3.3%</small><b class="sf-mute">-' + fmtN(S.tax) + '</b><span>소득세 3% + 지방소득세 0.3%</span></div><div><small>실지급 합계</small><b style="color:var(--blue)">' + fmtN(S.net) + '</b><span>' + (diff == null ? '견적에 인건비 항목 없음' : '견적 인건비 ' + fmtN(S.est) + ' 대비 <b style="color:' + (diff >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (diff >= 0 ? '-' : '+') + fmtN(Math.abs(diff)) + '</b>') + '</span></div></div>' +
-      '<div class="table-wrap sf-wrap"><table class="sf-t"><thead><tr><th>이름</th><th>역할</th><th>근무일</th><th>출근</th><th>퇴근</th><th>휴게</th><th>단가</th><th class="num">근무시간</th><th class="num">지급액</th><th class="num">3.3%</th><th class="num">실지급</th><th>신분증</th><th>계약서</th><th>계좌</th><th>연락처</th><th>상태</th><th></th></tr></thead><tbody>' + rows + '</tbody>' +
+    (open && l.length ? '<div class="sf-sum"><div><small>투입 인력</small><b>' + S.n + '명</b><span>출근 ' + S.in + ' · 대기 ' + (S.n - S.in) + '</span></div><div><small>총 근무</small><b>' + (Math.round(S.hours * 10) / 10) + '시간</b><span>휴게 제외</span></div><div><small>지급액 (세전)</small><b>' + fmtN(S.gross) + '</b><span>원</span></div><div><small>원천징수</small><b class="sf-mute">-' + fmtN(S.tax) + '</b><span>사람별 종류(8.8% · 3.3% · 일용)로 계산</span></div><div><small>실지급 합계</small><b style="color:var(--blue)">' + fmtN(S.net) + '</b><span>' + (diff == null ? '견적에 인건비 항목 없음' : '견적 인건비 ' + fmtN(S.est) + ' 대비 <b style="color:' + (diff >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (diff >= 0 ? '-' : '+') + fmtN(Math.abs(diff)) + '</b>') + '</span></div></div>' +
+      '<div class="table-wrap sf-wrap"><table class="sf-t"><thead><tr><th>이름</th><th>역할</th><th>근무일</th><th>출근</th><th>퇴근</th><th>휴게</th><th>단가</th><th class="num">근무시간</th><th class="num">지급액</th><th class="num">원천징수</th><th class="num">실지급</th><th>신분증</th><th>계약서</th><th>계좌</th><th>연락처</th><th>상태</th><th></th></tr></thead><tbody>' + rows + '</tbody>' +
       '<tfoot><tr><td colspan="7">합계 · ' + S.paidN + '명 지급</td><td class="num">' + (Math.round(S.hours * 10) / 10) + '</td><td class="num">' + fmtN(S.gross) + '</td><td class="num">-' + fmtN(S.tax) + '</td><td class="num" style="color:var(--blue)">' + fmtN(S.net) + '</td><td colspan="6" class="sf-warn">' + (S.warn.length ? '⚠ ' + E(S.warn.slice(0, 3).join(' · ')) + (S.warn.length > 3 ? ' 외 ' + (S.warn.length - 3) + '명' : '') : '✓ 서류 · 계좌 모두 확인') + '</td></tr></tfoot></table></div>' +
-      '<div class="sf-foot"><div>📄 엑셀: 지급 명세 · 원천징수 신고용 · 개인별 지급 내역<br><span>페이먼트로 넘기면 "인건비" 페이먼트 1건으로 결재 요청 (원천징수 3.3% 자동 · 명단은 메모와 엑셀 첨부)</span></div><button class="btn btn-secondary btn-sm" onclick="sfExcel(\'' + p.id + '\')">⬇ 엑셀</button><button class="btn btn-primary btn-sm" onclick="sfToPayment(\'' + p.id + '\')">💳 페이먼트로 넘기기</button></div>'
+      '<div class="sf-foot"><div>📄 엑셀: 지급 명세 · 원천징수 신고용 · 개인별 지급 내역<br><span>페이먼트로 넘기면 "인건비" 페이먼트 1건으로 결재 요청 (원천징수는 사람별 종류로 자동 · 명단은 메모와 엑셀 첨부)</span></div><button class="btn btn-secondary btn-sm" onclick="sfExcel(\'' + p.id + '\')">⬇ 엑셀</button><button class="btn btn-primary btn-sm" onclick="sfToPayment(\'' + p.id + '\')">💳 페이먼트로 넘기기</button></div>'
       : '') + '</div>';
 }
 function sfP(pid) { return DB.projects.find(function (x) { return x.id === pid; }); }
@@ -18020,7 +18021,7 @@ function sfLink(pid, i) {
 function sfExcel(pid) {
   var p = sfP(pid); if (!p || typeof XLSX === 'undefined') return;
   var l = p.staffPay || [], rows = [['이름', '역할', '연락처', '근무일', '일수', '출근', '퇴근', '휴게', '단가 구분', '단가', '근무시간', '지급액', '소득세(3%)', '지방소득세(0.3%)', '원천징수 합계', '실지급액', '계좌', '신분증', '계약서']];
-  l.forEach(function (s) { var g = sfGross(s), t = sfTax(g); rows.push([s.name || '', s.role || '', s.phone || '', s.dates || '', +s.days || 1, s.ciIn ? s.ciIn.slice(11, 16) : s.in || '', s.ciOut ? s.ciOut.slice(11, 16) : s.out || '', s.brk || '', s.rateType === 'day' ? '일당' : '시급', +String(s.rate || '').replace(/[^0-9]/g, '') || 0, Math.round(sfHours(s) * 10) / 10, g, t.it, t.lt, t.sum, g - t.sum, s.bank || '', s.idOk ? 'O' : 'X', s.contractOk ? 'O' : 'X']); });
+  l.forEach(function (s) { var g = sfGross(s), t = sfTax(g, s); rows.push([s.name || '', s.role || '', s.phone || '', s.dates || '', +s.days || 1, s.ciIn ? s.ciIn.slice(11, 16) : s.in || '', s.ciOut ? s.ciOut.slice(11, 16) : s.out || '', s.brk || '', s.rateType === 'day' ? '일당' : '시급', +String(s.rate || '').replace(/[^0-9]/g, '') || 0, Math.round(sfHours(s) * 10) / 10, g, t.it, t.lt, t.sum, g - t.sum, s.bank || '', s.idOk ? 'O' : 'X', s.contractOk ? 'O' : 'X']); });
   var S = sfSum(p); rows.push([]); rows.push(['합계', '', '', '', '', '', '', '', '', '', Math.round(S.hours * 10) / 10, S.gross, '', '', S.tax, S.net]);
   rows.push([]); rows.push(['※ 원천징수 신고(사업소득)에는 주민등록번호가 필요해요 — 이 파일에는 저장하지 않으니 신고 때 따로 받아 주세요']);
   var ws = XLSX.utils.aoa_to_sheet([[p.name + ' · 단기 인력 인건비 명세 (' + (p.eventStart || '') + ')'], []].concat(rows));
@@ -18036,7 +18037,7 @@ function sfToPayment(pid) {
   if (S.warn.length && !confirm('아직 확인 안 된 서류가 있어요:\n' + S.warn.join('\n') + '\n\n그래도 페이먼트로 넘길까요?')) return;
   var items = sfLaborEstimate(p), it = items[0] || (p.items || [])[0];
   if (!it) { showToast('견적 항목이 없어요. 견적서에 인건비 항목을 먼저 넣어 주세요', 'error'); return; }
-  var list = (p.staffPay || []).filter(function (s) { return sfGross(s); }).map(function (s) { var g = sfGross(s); return s.name + '(' + (s.role || '') + ') ' + fmtN(g) + ' → ' + fmtN(g - sfTax(g).sum) + (s.bank ? ' / ' + s.bank : ''); });
+  var list = (p.staffPay || []).filter(function (s) { return sfGross(s); }).map(function (s) { var g = sfGross(s); return s.name + '(' + (s.role || '') + ') ' + fmtN(g) + ' → ' + fmtN(g - sfTax(g, s).sum) + (s.bank ? ' / ' + s.bank : ''); });
   openPaymentModal(p.id, it.id, '');
   setTimeout(function () {
     var set = function (id, v) { var e = document.getElementById(id); if (e && !e.disabled) { e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); } };
@@ -18724,7 +18725,7 @@ function openTaxInvoiceModal(pid, id) {
       '<div class="tix-sum" id="tix-sum"></div></div>' +
     '<div class="tix-sec"><div class="tix-h">첨부 <small>신규 클라이언트면 사업자등록증 등을 붙여 주세요 · 메일에 함께 첨부돼요</small></div><input type="file" id="tix-input" multiple style="display:none" onchange="tixAddFiles(this.files);this.value=\'\'"><div class="tix-drop" id="tix-drop" onclick="if(!event.target.closest(\'.file-chip\'))document.getElementById(\'tix-input\').click()" ondragenter="tixDrag(event,1)" ondragover="tixDrag(event,1)" ondragleave="tixDrag(event,0)" ondrop="tixDrop(event)"><div class="tix-drop-msg"><span class="ic">⬆</span><b>파일을 여기로 끌어다 놓거나 클릭해서 첨부</b><small>PDF · 이미지 · 엑셀 등 · 파일당 15MB까지 · 여러 개 가능</small></div><div id="tix-files" class="tix-files"></div></div>' +
       '<div id="tix-req"></div></div>' +
-    '<div class="tix-sec"><div class="tix-h">대표님께 갈 메일 <small>위 내용이 자동으로 채워져요 · 필요하면 직접 고쳐도 돼요</small><button class="btn btn-secondary btn-xs" style="margin-left:auto" onclick="TIX.bodyEdited=false;tixRefresh()">다시 채우기</button></div><textarea class="form-input tix-body" id="tix-body" oninput="TIX.bodyEdited=true">' + E(inv && inv.bodyEdited ? inv.body || '' : '') + '</textarea></div>' +
+    tixCcHTML(inv) + '<div class="tix-sec"><div class="tix-h">대표님께 갈 메일 <small>위 내용이 자동으로 채워져요 · 필요하면 직접 고쳐도 돼요</small><button class="btn btn-secondary btn-xs" style="margin-left:auto" onclick="TIX.bodyEdited=false;tixRefresh()">다시 채우기</button></div><textarea class="form-input tix-body" id="tix-body" oninput="TIX.bodyEdited=true">' + E(inv && inv.bodyEdited ? inv.body || '' : '') + '</textarea></div>' +
     '<div class="tix-foot">' + (inv && inv.mail ? '<span class="tix-sent">✓ ' + E(inv.mail.at || '') + ' 메일 보냄 (' + E(inv.mail.by || '') + ')</span>' : '') + '<button class="btn btn-secondary" onclick="tixSave(false)">임시 저장</button><button class="btn btn-primary" onclick="tixSend()">✉ 대표님께 발행 요청 메일 보내기</button></div></div>';
   openModal('tix-modal'); tixFiles(); tixReqUI(); tixRefresh();
 }
@@ -18771,7 +18772,7 @@ function tixEnsureDrive(p, files) {
 }
 function tixMailHTML(body, files) {
   var E = qtEsc, link = files.filter(function (f) { return f.fileRef && /^gd:/.test(f.fileRef); });
-  return '<div style="font-family:\'Malgun Gothic\',\'Apple SD Gothic Neo\',sans-serif;font-size:14px;line-height:1.75;color:#16191f;white-space:pre-wrap">' + E(body) + '</div>' +
+  return '<div style="font-family:\'Malgun Gothic\',\'Apple SD Gothic Neo\',sans-serif;font-size:14px;line-height:1.75;color:#16191f">' + E(body).replace(/\r?\n/g, '<br>') + '</div>' +
     (link.length ? '<div style="margin-top:18px;padding-top:12px;border-top:1px solid #e5e7eb;font-family:sans-serif;font-size:13px;color:#5b6474">첨부 파일 (드라이브에서도 볼 수 있어요)<br>' + link.map(function (f) { return '· <a href="' + E(f.driveUrl || 'https://drive.google.com/file/d/' + f.fileRef.slice(3) + '/view') + '">' + E(f.name) + '</a>'; }).join('<br>') + '</div>' : '') +
     '<div style="margin-top:16px;font-family:sans-serif;font-size:11px;color:#a0a7b4">MARPLE ERP에서 보낸 메일이에요</div>';
 }
@@ -18783,7 +18784,7 @@ function tixSend() {
   showToast('대표님께 메일을 보내는 중…');
   tixEnsureDrive(p, inv.files).then(function () {
     var ids = inv.files.filter(function (f) { return f.fileRef && /^gd:/.test(f.fileRef); }).map(function (f) { return f.fileRef.slice(3); });
-    return sbDriveCall({ action: 'sendMail', to: [ceo.email], cc: currentUser.email ? [currentUser.email] : [], replyTo: currentUser.email || '', fromName: 'MARPLE ERP · ' + currentUser.name, subject: subj, text: body, html: tixMailHTML(body, inv.files), attachIds: ids });
+    return sbDriveCall({ action: 'sendMail', to: [ceo.email], cc: String(inv.cc != null ? inv.cc : (currentUser.email || '')).split(/[,;\s]+/).filter(Boolean), bcc: String(inv.bcc || '').split(/[,;\s]+/).filter(Boolean), replyTo: currentUser.email || '', fromName: 'MARPLE ERP · ' + currentUser.name, subject: subj, text: body, html: tixMailHTML(body, inv.files), attachIds: ids });
   }).then(function (j) {
     if (!j || !j.sent) { showToast('메일이 나가지 않았어요 — 대표님 이메일이 회사 주소(@marple.co.kr)인지 확인해 주세요', 'error'); saveDB(); return; }
     inv.status = '요청됨'; inv.requestedAt = new Date().toLocaleDateString('ko-KR'); inv.date = new Date().toISOString().slice(0, 10);
@@ -18920,7 +18921,7 @@ function incUrl(p, r) { var b = typeof vdBase === 'function' ? vdBase() : ''; re
 function incDocNo(r) { var d = String(r.createdAt || '').slice(0, 10).replace(/-/g, ''); return 'MP-' + d + '-' + String(r.id || '').slice(-4).toUpperCase(); }
 function incMsgText(p, r) {
   return '[마케팅피플] ' + (r.name ? r.name + '님, ' : '') + '안녕하세요.\n' + (r.event || p.name) + ' ' + (r.work || '') + ' 비용 지급을 위해 소득확인증 작성을 부탁드려요.\n' +
-    '지급액 ' + incFmt(r.net) + '원 (세전 ' + incFmt(r.gross) + '원 · 3.3% 원천징수 후)\n\n' +
+    '지급액 ' + incFmt(r.net) + '원 (세전 ' + incFmt(r.gross) + '원 · ' + whShort(r) + ' 원천징수 후)\n\n' +
     '▶ 작성 · 서명 링크 (' + INC_DAYS + '일 유효)\n' + incUrl(p, r) + '\n\n휴대폰에서 인적사항을 입력하고 손가락으로 서명하면 끝나요.\n문의: ' + (r.createdBy || '') + (r.createdByPhone ? ' ' + r.createdByPhone : '');
 }
 function incMailHTML(p, r) {
@@ -18934,7 +18935,7 @@ function incMailHTML(p, r) {
     '<tr><td style="padding:18px 28px 6px" align="center"><a href="' + E(url) + '" style="display:inline-block;background:#007db8;color:#fff;text-decoration:none;font-size:16px;font-weight:800;padding:15px 34px;border-radius:12px">작성 · 서명하러 가기 →</a>' +
     '<div style="font-size:12px;color:#8a93a3;margin-top:12px">링크는 <b>' + exs + '</b>까지 유효해요 · 버튼이 안 눌리면 아래 주소를 복사해 주세요<br><span style="color:#007db8;word-break:break-all">' + E(url) + '</span></div></td></tr>' +
     '<tr><td style="padding:20px 28px 26px"><div style="background:#f7f8fa;border-radius:10px;padding:13px 15px;font-size:12.5px;color:#5b6474;line-height:1.7">문의 · <b style="color:#16191f">' + E(r.createdBy || '') + '</b>' + (r.createdByPhone ? ' · ' + E(r.createdByPhone) : '') + (r.createdByEmail ? ' · ' + E(r.createdByEmail) : '') + '</div></td></tr>' +
-    '<tr><td style="background:#f7f8fa;padding:14px 28px;font-size:11px;color:#a0a7b4;line-height:1.6">(주)마케팅피플 · 서울시 강남구 역삼로 230 세명빌딩 3층 · 02-567-2922<br>지급액의 3.3%는 사업소득세로 국세청에 신고돼요.</td></tr></table></div>';
+    '<tr><td style="background:#f7f8fa;padding:14px 28px;font-size:11px;color:#a0a7b4;line-height:1.6">(주)마케팅피플 · 서울시 강남구 역삼로 230 세명빌딩 3층 · 02-567-2922<br>' + whNote(r) + ' 신고돼요.</td></tr></table></div>';
 }
 
 // ── 확인증 그리기 (A4 · 150dpi) — o: { rrn, sig(Image|null), blank } ──
@@ -18959,7 +18960,7 @@ function incDraw(r, o) {
     line(X0, 220, X1, 220, INK, 3);
     spaced('소득확인증', W / 2, 318, '900', 66, INK, 34);
     spaced('CERTIFICATE OF PAYMENT', W / 2, 376, '700', 19, BL, 9);
-    txt('문서번호 ' + incDocNo(r), X0, 440, '400', 19, SUB); txt('사업소득 (인적용역)', X1, 440, '400', 19, SUB, 'right');
+    txt('문서번호 ' + incDocNo(r), X0, 440, '400', 19, SUB); txt(whKind(r), X1, 440, '400', 19, SUB, 'right');
     var sec = function (n, t, y) { c.fillStyle = BL; c.beginPath(); c.arc(X0 + 16, y, 16, 0, Math.PI * 2); c.fill(); txt(String(n), X0 + 16, y + 1, '700', 18, '#fff', 'center'); txt(t, X0 + 44, y, '700', 25, INK); };
     var TH = 180, RH = 66, TW = X1 - X0;
     var row = function (y, cells) { // cells: [[label,val,w],...]
@@ -18972,7 +18973,7 @@ function incDraw(r, o) {
     row(y, [['행사일자', incDateK(r.eventDate), 580], ['제공 업무', r.work || '', TW - 580, null, 150]]); y += RH;
     // 금액 3칸
     var AH = 112, cw = [TW * .32, TW * .33, TW * .35], ax = X0;
-    var amt = [['지급 총액 (세전)', incFmt(r.gross)], ['원천징수 3.3%  (소득세 ' + incFmt(r.tax && r.tax.it) + ' · 지방세 ' + incFmt(r.tax && r.tax.lt) + ')', '− ' + incFmt(r.tax && r.tax.sum)], ['실 지급액', incFmt(r.net)]];
+    var amt = [['지급 총액 (세전)', incFmt(r.gross)], ['원천징수 ' + whShort(r) + '  (소득세 ' + incFmt(r.tax && r.tax.it) + ' · 지방세 ' + incFmt(r.tax && r.tax.lt) + ')', '− ' + incFmt(r.tax && r.tax.sum)], ['실 지급액', incFmt(r.net)]];
     amt.forEach(function (a, i) { var last = i === 2; rect(ax, y, cw[i], AH, last ? BL : '#fff', last ? BL : LN); txt(a[0], ax + 22, y + 32, '400', 17, last ? '#d6f0fc' : SUB, 'left', cw[i] - 36); font('700', 36); var nw = c.measureText(a[1]).width; txt(a[1], ax + 22, y + 76, '700', 36, last ? '#fff' : INK); txt('원', ax + 26 + nw, y + 80, '500', 21, last ? '#fff' : INK); ax += cw[i]; });
     y += AH;
     sec(2, '수령인 인적사항', y + 62); y += 96;
@@ -18985,7 +18986,7 @@ function incDraw(r, o) {
     y += 70;
     var ev = '「' + (r.event || '') + '」', l1 = '본인은 ' + ev + ' 행사의 ' + (r.work || '용역') + '를 제공하였으며,';
     font('400', 28); var lines = c.measureText(l1).width > TW - 40 ? ['본인은 ' + ev + ' 행사의', (r.work || '용역') + '를 제공하였으며,'] : [l1];
-    lines.push('해당 업무에 대한 대가로 금 ' + incFmt(r.net) + '원(3.3% 원천징수 후)을 수령하였음을 확인합니다.');
+    lines.push('해당 업무에 대한 대가로 금 ' + incFmt(r.net) + '원(' + whShort(r) + ' 원천징수 후)을 수령하였음을 확인합니다.');
     lines.forEach(function (t) { txt(t, W / 2, y, '400', 28, INK, 'center', TW - 20); y += 52; });
     // 날짜 · 서명
     y += 46;
@@ -18999,7 +19000,7 @@ function incDraw(r, o) {
     spaced('(주)마케팅피플 귀중', W / 2, y, '700', 30, INK, 3);
     // 하단
     var fy = H - 200; line(X0, fy, X1, fy, LN, 2);
-    txt('※ 지급액의 3.3%는 사업소득세로 국세청에 신고되오니, 정확한 인적사항을 기재해 주시기 바랍니다.', X0, fy + 36, '500', 19, INK, 'left', TW);
+    txt('※ ' + whNote(r) + ' 신고되오니, 정확한 인적사항을 기재해 주시기 바랍니다.', X0, fy + 36, '500', 19, INK, 'left', TW);
     txt('※ 개인정보 수집·이용: 위 정보는 소득세법에 따른 원천징수 신고 및 대금 지급 목적으로만 이용되며, 관계 법령에 따른 보존기간 후 파기됩니다.', X0, fy + 70, '400', 17, SUB, 'left', TW);
     var f = r.files || {}, chk = [['개인정보 수집·이용 동의', !bl && !!s.consentAt], ['신분증 사본 첨부', !bl && !!f.idc], ['통장 사본 첨부', !bl && !!f.bank]], cx = X0;
     chk.forEach(function (k) { rect(cx, fy + 100, 22, 22, '#fff', '#6b7680'); if (k[1]) { c.strokeStyle = BL; c.lineWidth = 4; c.beginPath(); c.moveTo(cx + 4, fy + 111); c.lineTo(cx + 10, fy + 118); c.lineTo(cx + 20, fy + 104); c.stroke(); } txt(k[0], cx + 32, fy + 112, '400', 18, INK); font('400', 18); cx += 32 + c.measureText(k[0]).width + 46; });
@@ -19401,7 +19402,7 @@ function ssRows() {
     (p.staffPay || []).forEach(function (s) {
       if (!s || !String(s.name || '').trim()) return;
       var mo = ssMonth(p, s); if (!mo) return;
-      var g = sfGross(s), t = sfTax(g);
+      var g = sfGross(s), t = sfTax(g, s);
       var ic = (p.incReqs || []).find(function (r) { return r.status !== 'revoked' && r.staffId === s.id; }) || (p.incReqs || []).find(function (r) { return r.status !== 'revoked' && !r.staffId && r.name === s.name; });
       var payTxt = '';
       if (ic) { var pay = getPayForContext(p.id, ic.itemId, ic.gpId || null); if (pay) payTxt = pay.depositConfirmed ? '입금 완료' + (pay.date ? ' ' + pay.date : '') : (typeof getApprovalStep === 'function' && getApprovalStep(pay.approval || {}) === 'done') ? '결재 완료' : pay.draft ? '작성 중' : '결재 중'; }
@@ -19476,7 +19477,7 @@ function acctRows(ym) {
   (DB.projects || []).forEach(function (p) {
     (p.staffPay || []).forEach(function (s) {
       if (!s || !String(s.name || '').trim()) return; var mo = ssMonth(p, s); if (!mo || mo.ym !== ym) return;
-      var r = typeof icStaffReq === 'function' ? icStaffReq(p, s) : null, g = sfGross(s), t = sfTax(g);
+      var r = typeof icStaffReq === 'function' ? icStaffReq(p, s) : null, g = sfGross(s), t = sfTax(g, s);
       var lk = r && r.itemId ? r : (p.staffPayLinked || {}), pay = lk.itemId ? getPayForContext(p.id, lk.itemId, lk.gpId || null) : null;
       out.push({ p: p, s: s, r: r, day: String(mo.day).slice(0, 10), g: g, t: t, pay: pay });
     });
@@ -19497,7 +19498,7 @@ function acctRender() {
       '<td class="r">' + (s.rateType === 'day' ? (+s.days || 1) + '일' : (Math.round(sfHours(s) * 10) / 10) + 'h') + '</td><td class="r">' + F(x.g) + '</td><td class="r">' + F(x.t.it) + '</td><td class="r">' + F(x.t.lt) + '</td><td class="r"><b>' + F(x.g - x.t.sum) + '</b></td><td>' + E(s.bank || '—') + '</td><td>' + icTxt(x) + '</td><td>' + payTxt(x.pay) + '</td></tr>'; }).join('') +
     '</tbody><tfoot><tr><td colspan="5">' + rows.length + '명 합계 · 소득확인증 서명 ' + sig.length + '명</td><td class="r">' + F(T.g) + '</td><td class="r">' + F(T.it) + '</td><td class="r">' + F(T.lt) + '</td><td class="r"><b>' + F(T.n) + '</b></td><td colspan="3"></td></tr></tfoot></table>'
     : '<div class="ac-empty">' + M + '월에 등록된 단기 인력이 없어요</div>';
-  root.innerHTML = '<div class="ac-head"><div><h2>인력 · 원천징수</h2><p>단기 인력(사업소득 3.3%)의 근무 · 지급 · 소득확인증을 근무월별로 봐요. 이 메뉴는 담당자 계정에만 보여요.</p></div>' +
+  root.innerHTML = '<div class="ac-head"><div><h2>인력 · 원천징수</h2><p>단기 인력(기타소득 8.8% · 일용근로 · 사업소득 3.3%)의 근무 · 지급 · 소득확인증을 근무월별로 봐요. 이 메뉴는 담당자 계정에만 보여요.</p></div>' +
     '<div class="ac-ctl">' + (ACC.rrnOn ? '<button class="btn btn-secondary btn-sm" onclick="acctRrnHide()">🔒 주민번호 가리기</button>' : '<button class="btn btn-primary btn-sm" onclick="acctRrnShow()">🔓 주민번호 전체 보기</button>') +
     '<button class="btn btn-secondary btn-sm" onclick="acctShift(-1)">‹</button><input type="month" class="form-input" value="' + ym + '" onchange="ACC.ym=this.value||ACC.ym;acctRender()"><button class="btn btn-secondary btn-sm" onclick="acctShift(1)">›</button>' +
     '<button class="btn btn-secondary btn-sm" onclick="ssOpen()">📊 구글 시트</button></div></div>' +
@@ -19667,7 +19668,7 @@ incRender = function () {
   var p = X.p, E = qtEsc, l = (p.staffPay || []).filter(function (s) { return s.name || sfGross(s); }), base = incN((document.getElementById('pay-received') || {}).value);
   if (icMigrate(p)) saveDB();
   var sig = l.filter(function (s) { var r = icStaffReq(p, s); return r && r.status === 'submitted'; }).length, sum = l.reduce(function (a, s) { return a + sfGross(s); }, 0);
-  var rows = l.map(function (s) { var g = sfGross(s), t = sfTax(g); return '<div class="inc-row"><div class="inc-who"><b>' + E(s.name || '이름 없음') + '</b>' + (s.role ? ' <span style="color:var(--text3);font-size:12px">' + E(s.role) + '</span>' : '') + '<small>' + E(s.dates || '') + ' · 세전 ' + incFmt(g) + ' − ' + incFmt(t.sum) + ' = 실지급 <b>' + incFmt(g - t.sum) + '원</b>' + (s.bank ? ' · 💳 ' + E(s.bank) : '') + '</small></div>' + icCellHTML(p, s) + '</div>'; }).join('');
+  var rows = l.map(function (s) { var g = sfGross(s), t = sfTax(g, s); return '<div class="inc-row"><div class="inc-who"><b>' + E(s.name || '이름 없음') + '</b>' + (s.role ? ' <span style="color:var(--text3);font-size:12px">' + E(s.role) + '</span>' : '') + '<small>' + E(s.dates || '') + ' · 세전 ' + incFmt(g) + ' − ' + incFmt(t.sum) + ' = 실지급 <b>' + incFmt(g - t.sum) + '원</b>' + (s.bank ? ' · 💳 ' + E(s.bank) : '') + '</small></div>' + icCellHTML(p, s) + '</div>'; }).join('');
   var f = INC.f || (INC.f = { name: '', phone: '', role: '', amt: base > sum ? String(base - sum) : '', mode: 'gross', date: p.eventStart || '' });
   var add = INC.add || !l.length ? '<div class="inc-form"><div style="font-size:12px;font-weight:700;margin-bottom:6px">+ 인력 추가 <span style="font-weight:500;color:var(--text3)">— 단기 인력 표에 한 줄로 들어가요 (일당 1일 기준)</span></div><div class="inc-g">' +
     '<label>이름<input class="form-input" value="' + E(f.name) + '" placeholder="홍길동" oninput="INC.f.name=this.value"></label><label>연락처<input class="form-input" value="' + E(f.phone) + '" placeholder="010-0000-0000" oninput="INC.f.phone=this.value"></label>' +
@@ -21817,6 +21818,381 @@ calDelete = function (all) {
   ].join('\n');
   document.head.appendChild(st);
 })();
+
+</script>
+<script>
+// ════ 84차 — 원천징수 3종: 기타소득 8.8%(프리랜서 기본) · 사업소득 3.3% · 일용근로 ════
+var WH_T = {
+  etc: { name: '기타소득 8.8%', short: '8.8%', badge: '8.8%', kind: '기타소득 (프리랜서)', note: '지급액의 8.8%(기타소득세)는 국세청에', desc: '프리랜서 · 강사 · 통역 등 (12.5만원 이하면 0원)' },
+  biz: { name: '사업소득 3.3%', short: '3.3%', badge: '3.3%', kind: '사업소득 (인적용역)', note: '지급액의 3.3%는 사업소득세로 국세청에', desc: '계속 · 반복해서 일하는 개인' },
+  daily: { name: '일용근로', short: '일용근로소득세', badge: '일용', kind: '일용근로소득', note: '일용근로소득은 국세청에', desc: '하루 단위 현장 인력 (일당 15만원까지 0원)' }
+};
+var WH_ORDER = ['etc', 'daily', 'biz'];
+function whT(t) { return WH_T[t] || WH_T.biz; }
+function whOf(o) { return (o && WH_T[o.whType]) ? o.whType : 'biz'; } // 예전 자료(구분 없음)는 3.3%
+function whS(o) { return whT(whOf(o)).badge; }
+function whShort(o) { return whT(whOf(o)).short; }
+function whKind(o) { return whT(whOf(o)).kind; }
+function whNote(o) { return whT(whOf(o)).note; }
+// 원천징수 계산 (소득세 · 지방소득세 10원 미만 절사)
+//  기타소득: 지급액 × (1-필요경비 60%) × 20% = 8% · 지급액 125,000원 이하(기타소득금액 5만원 이하)는 과세최저한 0원
+//  사업소득: 3% · 소득세 1,000원 미만 0원
+//  일용근로: (일당 − 150,000) × 6% × (1 − 55% 세액공제) = 2.7% · 소득세 1,000원 미만 0원
+function whTax(g, type, days) {
+  g = +g || 0; var it = 0;
+  if (type === 'etc') it = g <= 125000 ? 0 : Math.floor(g * 0.08 / 10) * 10;
+  else if (type === 'daily') { var d = Math.max(1, Math.round(+days || 1)), w = g / d; it = Math.floor(Math.max(0, w - 150000) * 0.027 * d / 10) * 10; if (it < 1000) it = 0; }
+  else { it = Math.floor(g * 0.03 / 10) * 10; if (it < 1000) it = 0; }
+  var lt = Math.floor(it * 0.1 / 10) * 10; return { it: it, lt: lt, sum: it + lt };
+}
+function whGrossFromNet(net, type, days) {
+  net = +net || 0; if (!net) return 0; var r = type === 'etc' ? 0.912 : type === 'daily' ? 0.97 : 0.967, g0 = Math.floor(net / r), best = null;
+  for (var g = Math.max(1, g0 - 400); g <= g0 + 400; g++) { var d = g - whTax(g, type, days).sum - net; if (d === 0) return g; if (d > 0 && (!best || d < best.d)) best = { g: g, d: d }; }
+  return best ? best.g : Math.round(net / r);
+}
+// 소득확인증 요청 계산 — 사람마다 구분 · 일수
+incCalc = function (r) { var t = whTax(r.gross, whOf(r), r.days); r.tax = t; r.net = (+r.gross || 0) - t.sum; return r; };
+
+// ════ 84차 (PC) ════
+
+// ── 1) 페이먼트: 원천징수 종류 고르기 · 금액 계산 ──
+var _whType = 'etc';
+function whPayStaff() {
+  try { var X = incCtx(); if (!X) return []; return (X.p.staffPay || []).filter(function (s) { return sfGross(s); }); } catch (e) { return []; }
+}
+// 단기 인력 표가 있고 공급가와 합이 맞으면 → 사람별 세금 합계, 아니면 → 고른 종류로 공급가 전체 계산
+function whPayTax(base) {
+  var l = whPayStaff(), sum = l.reduce(function (a, s) { return a + sfGross(s); }, 0);
+  if (l.length && sum === Math.round(+base || 0)) return l.reduce(function (a, s) { return a + sfTax(sfGross(s), s).sum; }, 0);
+  return whTax(base, _whType, 1).sum;
+}
+function whPayLabel() {
+  var l = whPayStaff(), types = {}; l.forEach(function (s) { types[whOf(s)] = 1; });
+  var k = Object.keys(types);
+  if (l.length && k.length > 1) return '원천징수 (인력별)';
+  return '원천징수 (' + whT(k.length === 1 ? k[0] : _whType).short + ')';
+}
+function whChips() {
+  var b = document.getElementById('tax-btn-withhold'); if (!b) return;
+  if (!/단기인력/.test(b.innerHTML)) b.innerHTML = '👥 단기인력 · 프리랜서<br><span style="font-size:11px;font-weight:400;">(원천징수 8.8% · 3.3% · 일용)</span>';
+  var row = b.parentNode, box = document.getElementById('wh-types');
+  if (!box) { box = document.createElement('div'); box.id = 'wh-types'; row.parentNode.insertBefore(box, row.nextSibling); }
+  if (_taxMode !== 'withhold') { box.style.display = 'none'; return; }
+  box.style.display = '';
+  box.innerHTML = '<div class="wh-chips">' + WH_ORDER.map(function (t) { var o = whT(t); return '<button type="button" class="' + (_whType === t ? 'on' : '') + '" onclick="_whType=\'' + t + '\';whChips();calcPayment();try{incRender()}catch(e){}"><b>' + o.name + '</b><small>' + o.desc + '</small></button>'; }).join('') + '</div>' +
+    '<div class="wh-hint">아래 <b>단기 인력</b>에 사람을 넣으면 사람마다 종류를 따로 고를 수 있고, 세금도 사람별로 계산돼요.</div>';
+}
+var _whSetTax = setTaxMode;
+setTaxMode = function (mode) { var r = _whSetTax.apply(this, arguments); try { whChips(); } catch (e) {} return r; };
+var _whCalc = calcPayment;
+calcPayment = function () {
+  var r = _whCalc.apply(this, arguments);
+  try {
+    if (_taxMode === 'withhold') {
+      var supply = parseFloat(document.getElementById('pay-received').value) || 0, tax = whPayTax(supply);
+      var lab = document.getElementById('pc-tax-label'), amt = document.getElementById('pc-tax-amount'), fin = document.getElementById('pc-final');
+      if (lab) lab.textContent = whPayLabel(); if (amt) amt.textContent = '- ' + fmt(tax); if (fin) fin.textContent = supply > 0 ? fmt(supply - tax) : '—';
+    }
+  } catch (e) {}
+  return r;
+};
+// 페이먼트를 열 때 저장된 종류 불러오기
+var _whOpenPay = openPaymentModal;
+openPaymentModal = function (pid, itemId, gpId) {
+  _whType = 'etc';
+  var r = _whOpenPay.apply(this, arguments);
+  try { var pay = getPayForContext(pid, itemId, gpId || null); if (pay && pay.taxMode === 'withhold') _whType = whOf(pay); } catch (e) {}
+  setTimeout(function () { try { whChips(); calcPayment(); } catch (e) {} }, 30);
+  return r;
+};
+
+// ── 2) 단기 인력 표: 사람마다 세금 종류 ──
+sfTax = function (g, s) { return whTax(g, s ? whOf(s) : 'biz', s && s.days); };
+var _whSfNew = sfNew;
+sfNew = function (o) { var r = _whSfNew.apply(this, arguments); if (!r.whType) r.whType = 'daily'; return r; };
+function whSel(pid, i, s) {
+  return '<select class="sf-in wh-sel" title="원천징수 종류" onchange="sfSet(\'' + pid + '\',' + i + ',\'whType\',this.value)">' + WH_ORDER.map(function (t) { return '<option value="' + t + '"' + (whOf(s) === t ? ' selected' : '') + '>' + whT(t).badge + '</option>'; }).join('') + '</select>';
+}
+
+// ── 3) 페이먼트 안 인력 추가: 종류 · 일수 ──
+var _whIncRender = incRender;
+incRender = function () {
+  var r = _whIncRender.apply(this, arguments);
+  try {
+    var X = incCtx(), box = document.getElementById('inc-box'); if (!X || !box || box.style.display === 'none') return r;
+    var f = INC.f; if (f) { if (!f.whType) f.whType = _whType; if (!f.days) f.days = 1; }
+    // 사람 줄: 종류 고르기
+    var l = (X.p.staffPay || []).filter(function (s) { return s.name || sfGross(s); });
+    [].forEach.call(box.querySelectorAll('.inc-row'), function (row, i) {
+      var s = l[i]; if (!s || row.querySelector('.wh-sel')) return; var idx = X.p.staffPay.indexOf(s), who = row.querySelector('.inc-who b');
+      if (who) who.insertAdjacentHTML('afterend', ' ' + whSel(X.p.id, idx, s).replace("sfSet(", "whSfSetPay("));
+    });
+    // 추가 폼: 종류 · 일수
+    var form = box.querySelector('.inc-form .inc-g');
+    if (form && f && !box.querySelector('#wh-f')) {
+      var g = f.mode === 'net' ? whGrossFromNet(incN(f.amt), f.whType, f.days) : incN(f.amt), t = whTax(g, f.whType, f.days);
+      form.insertAdjacentHTML('afterend', '<div id="wh-f" class="wh-f"><span>세금 종류</span>' + WH_ORDER.map(function (k) { return '<button type="button" class="' + (f.whType === k ? 'on' : '') + '" onclick="INC.f.whType=\'' + k + '\';incRender()">' + whT(k).name + '</button>'; }).join('') +
+        (f.whType === 'daily' ? '<label>근무 일수 <input class="form-input" type="number" min="1" value="' + (+f.days || 1) + '" onchange="INC.f.days=Math.max(1,+this.value||1);incRender()"> 일 <small>(금액은 전체 일수 합계)</small></label>' : '') +
+        (g ? '<div class="inc-calc">세전 <b>' + incFmt(g) + '</b> − ' + whT(f.whType).name + ' <b>' + incFmt(t.sum) + '</b> <span>(소득세 ' + incFmt(t.it) + ' · 지방세 ' + incFmt(t.lt) + ')</span> = 실지급 <b class="b">' + incFmt(g - t.sum) + '원</b></div>' : '') + '</div>');
+    }
+    var tag = box.querySelector('.vd-h .vd-tag.gray'); if (tag && /3\.3%/.test(tag.textContent)) tag.textContent = '원천징수 인력';
+  } catch (e) { console.warn('wh inc', e); }
+  return r;
+};
+function whSfSetPay(pid, i, k, v) { var p = sfP(pid); if (!p || !p.staffPay || !p.staffPay[i]) return; p.staffPay[i][k] = v; saveDB(); incRender(); calcPayment(); }
+icAddStaff = function (send) {
+  var X = incCtx(), f = INC.f; if (!X || !f) return;
+  var type = f.whType || _whType, days = type === 'daily' ? Math.max(1, +f.days || 1) : 1;
+  var g = f.mode === 'net' ? whGrossFromNet(incN(f.amt), type, days) : incN(f.amt);
+  if (!String(f.name || '').trim()) { showToast('이름을 넣어 주세요', 'error'); return; }
+  if (!g) { showToast('금액을 넣어 주세요', 'error'); return; }
+  var daily = Math.round(g / days);
+  var s = sfNew({ name: f.name.trim(), phone: f.phone.trim(), role: (f.role || '').trim(), dates: f.date ? f.date.slice(5).replace('-', '/') : '', days: days, rateType: 'day', rate: daily.toLocaleString('ko-KR'), brk: '', whType: type });
+  if (daily * days !== g) s.rateAdj = g - daily * days;
+  (X.p.staffPay = X.p.staffPay || []).push(s);
+  if (!(X.p.staffPayLinked || {}).itemId) X.p.staffPayLinked = Object.assign({}, X.p.staffPayLinked || {}, { itemId: X.c.itemId, gpId: X.c.gpId || '' });
+  INC.add = false; INC.f = null; saveDB();
+  // 공급가를 인력 합계로 맞춤
+  try { var sum = (X.p.staffPay || []).reduce(function (a, z) { return a + sfGross(z); }, 0), e = document.getElementById('pay-received'); if (e && !e.disabled) { e.value = sum; calcPayment(); } } catch (e2) {}
+  if (send) icSend(X.p.id, s.id, 'msg'); else { incRender(); showToast(s.name + '님을 넣었어요 (' + whT(type).name + ')'); }
+};
+var _whSfGross = sfGross;
+sfGross = function (s) { return _whSfGross.apply(this, arguments) + (s.rateType === 'day' && s.rateAdj ? +s.rateAdj : 0); };
+
+// ── 4) 소득확인증 요청: 종류 · 일수 · 신분증 사본 기본으로 받기 ──
+var _whIcMake = icMake;
+icMake = function (p, s, itemId, gpId) {
+  var r = _whIcMake.apply(this, arguments); if (!r) return r;
+  r.whType = whOf(s); r.days = +s.days || 1; r.needIdc = !(s.idOk && s.idFile); r.needBank = true; incCalc(r); return r;
+};
+
+// ── 5) 세금계산서 요청 메일: 참조(CC) · 숨은참조(BCC) ──
+function tixEmails(id) { return String((document.getElementById(id) || {}).value || '').split(/[,;\s]+/).map(function (x) { return x.trim(); }).filter(function (x) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x); }); }
+function tixCcHTML(inv) {
+  var E = qtEsc, cc = inv && inv.cc != null ? inv.cc : (currentUser.email || ''), bcc = inv && inv.bcc || '';
+  var opts = (DB.users || []).filter(function (u) { return u.status === 'active' && u.email; }).map(function (u) { return '<option value="' + E(u.email) + '">' + E(u.name + (u.team ? ' · ' + u.team : '')) + '</option>'; }).join('');
+  return '<div class="tix-sec"><div class="tix-h">받는 사람 <small>대표님께 가요 · 참조/숨은참조는 쉼표로 여러 명</small></div>' +
+    '<div class="tix-cc"><label><span>참조 (CC)</span><input class="form-input" id="tix-cc" list="tix-ul" value="' + E(cc) + '" placeholder="예: harry@marple.co.kr, kim@marple.co.kr"></label>' +
+    '<label><span>숨은참조 (BCC)</span><input class="form-input" id="tix-bcc" list="tix-ul" value="' + E(bcc) + '" placeholder="선택"></label><datalist id="tix-ul">' + opts + '</datalist></div></div>';
+}
+var _whTixSave = tixSave;
+tixSave = function () {
+  var cc = document.getElementById('tix-cc') ? tixEmails('tix-cc').join(', ') : null, bcc = document.getElementById('tix-bcc') ? tixEmails('tix-bcc').join(', ') : null;
+  var inv = _whTixSave.apply(this, arguments);
+  if (inv) { if (cc != null) inv.cc = cc; if (bcc != null) inv.bcc = bcc; }
+  return inv;
+};
+
+// ── 6) 입금 확인 (고객사 → 마플) ──
+function depCan(u) { u = u || currentUser; return !!u && (u.role === 'admin' || u.approvalRole === 'ceo' || /창미/.test(u.name || '') || !!(u.perms && u.perms.depositConfirm)); }
+function depList() { return ppTaxList().filter(function (x) { return x.inv.status === '발행완료'; }); }
+function depDays(x) { var d = x.inv.issuedAt || x.inv.date; if (!d) return 0; return Math.floor((new Date(ppToday()) - new Date(String(d).slice(0, 10))) / 864e5); }
+function depHTML() {
+  var all = depList(), q = PPL.q.trim().toLowerCase(), st = PPL.dstat || '미입금', can = depCan();
+  var list = all.filter(function (x) { var paid = !!x.inv.deposit; return (st === '전체' || (st === '입금완료') === paid) && (!q || [x.p.name, x.p.client, x.inv.receiver].join(' ').toLowerCase().indexOf(q) >= 0); })
+    .sort(function (a, b) { return String(a.inv.issuedAt || a.inv.date || '').localeCompare(String(b.inv.issuedAt || b.inv.date || '')); });
+  var open = all.filter(function (x) { return !x.inv.deposit; }), openSum = open.reduce(function (s, x) { return s + (+x.inv.total || 0); }, 0), late = open.filter(function (x) { return depDays(x) > 30; });
+  var E = qtEsc;
+  return '<div class="dep-sum"><div><small>미입금</small><b>' + open.length + '건</b><span>' + fmt(openSum) + '</span></div><div class="' + (late.length ? 'red' : '') + '"><small>30일 넘음</small><b>' + late.length + '건</b><span>' + fmt(late.reduce(function (s, x) { return s + (+x.inv.total || 0); }, 0)) + '</span></div><div><small>입금 확인 처리</small><b>' + (can ? '가능' : '보기만') + '</b><span>대표 · 관리자 · 김창미 실장님</span></div></div>' +
+    '<div class="card pp-bar"><div class="pp-range">' + ['미입금', '입금완료', '전체'].map(function (s) { return '<button class="' + (st === s ? 'on' : '') + '" onclick="PPL.dstat=\'' + s + '\';renderPayPlanPage()">' + s + '</button>'; }).join('') + '</div>' +
+    '<b class="pp-lbl">' + list.length + '건 · 합계 ' + fmt(list.reduce(function (s, x) { return s + (+x.inv.total || 0); }, 0)) + '</b><input class="form-input" style="max-width:220px;margin-left:auto" placeholder="프로젝트 · 고객사 검색" value="' + E(PPL.q) + '" oninput="PPL.q=this.value;clearTimeout(PPL._t);PPL._t=setTimeout(renderPayPlanPage,250)"></div>' +
+    '<div class="card" style="padding:0"><div class="table-wrap"><table class="pp-t"><thead><tr><th>발행일</th><th>프로젝트</th><th>고객사 (발행처)</th><th style="text-align:right">합계 (VAT 포함)</th><th>경과</th><th>담당</th><th>입금</th></tr></thead><tbody>' +
+    (list.length ? list.map(function (x) {
+      var i = x.inv, d = depDays(x), dep = i.deposit;
+      var act = dep ? '<span class="dep-ok">✓ 입금완료 ' + E(String(dep.date || '').slice(5).replace('-', '/')) + '</span><div class="pp-sub">' + E(dep.by || '') + (can ? ' · <a href="javascript:void(0)" onclick="depUndo(\'' + x.p.id + '\',\'' + i.id + '\')">취소</a>' : '') + '</div>'
+        : can ? '<div class="dep-act"><input type="date" class="form-input" id="dep-d-' + i.id + '" value="' + ppToday() + '"><button class="btn btn-primary btn-sm" onclick="depDone(\'' + x.p.id + '\',\'' + i.id + '\')">💰 입금완료</button></div>' : '<span class="pp-sub">입금 대기</span>';
+      return '<tr><td>' + E(i.issuedAt || i.date || '') + (i.approvalNo ? '<div class="pp-sub">승인 ' + E(i.approvalNo) + '</div>' : '') + '</td><td><a href="javascript:void(0)" onclick="openProjectDetail(\'' + x.p.id + '\')">' + E(x.p.name) + '</a><div class="pp-sub">' + E(x.p.client || '') + '</div></td><td>' + E(i.receiver || '') + '</td>' +
+        '<td style="text-align:right;font-weight:700">' + fmt(i.total || 0) + '</td><td' + (!dep && d > 30 ? ' style="color:var(--red);font-weight:700"' : '') + '>' + (dep ? '–' : d + '일' + (d > 30 ? ' ⚠' : '')) + '</td><td>' + E(x.p.manager || i.requestedBy || '') + '</td><td>' + act + '</td></tr>';
+    }).join('') : '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-text">' + st + ' 건이 없어요</div></div></td></tr>') + '</tbody></table></div></div>' +
+    '<div style="font-size:12px;color:var(--text3);margin-top:8px">세금계산서가 <b>발행완료</b>된 건이 자동으로 모여요 · [입금완료]를 누르면 담당자 · 요청자 · 팀장 · 본부장에게 앱 알림과 메일이 가요</div>';
+}
+function depPeople(p, inv) {
+  var out = {}, add = function (u) { if (u && u.id && u.status !== 'inactive') out[u.id] = u; };
+  var mgr = (DB.users || []).find(function (u) { return u.name === p.manager; }), req = (DB.users || []).find(function (u) { return u.id === inv.requestedById || u.name === inv.requestedBy; });
+  add(mgr); add(req);
+  [mgr, req].forEach(function (u) {
+    var team = (u && u.team) || p.team; if (!team) return;
+    try { add(aprMapped('teamLead', team)); add(aprMapped('deptHead', team)); } catch (e) {}
+    try { if (!aprMapped('teamLead', team)) (aprUsersFor('teamLead', team) || []).forEach(add); if (!aprMapped('deptHead', team)) (aprUsersFor('deptHead', team) || []).forEach(add); } catch (e) {}
+  });
+  return Object.keys(out).map(function (k) { return out[k]; });
+}
+function depDone(pid, id) {
+  if (!depCan()) { showToast('입금 확인은 대표 · 관리자 · 김창미 실장님만 할 수 있어요', 'error'); return; }
+  var p = DB.projects.find(function (x) { return x.id === pid; }); if (!p) return;
+  var inv = (p.taxInvoices || []).find(function (x) { return x.id === id; }); if (!inv) return;
+  var d = (document.getElementById('dep-d-' + id) || {}).value || ppToday();
+  inv.deposit = { date: d, by: currentUser.name, byId: currentUser.id, at: new Date().toISOString() };
+  var ppl = depPeople(p, inv), msg = '"' + p.name + '" ' + (inv.receiver || p.client || '') + ' ' + fmt(inv.total || 0) + ' 입금이 확인됐어요 (' + d.slice(5).replace('-', '/') + ' · ' + currentUser.name + ')';
+  ppl.forEach(function (u) { if (u.id !== currentUser.id) pushNotification(u.id, 'tax', { title: '💰 고객사 입금 완료', message: msg, projectId: p.id }); });
+  saveDB(); renderPayPlanPage();
+  var to = ppl.map(function (u) { return u.email; }).filter(Boolean);
+  if (!to.length) { showToast('입금완료 처리했어요 (메일 받을 사람 이메일이 없어요)'); return; }
+  var E = qtEsc, row = function (k, v) { return '<tr><td style="padding:6px 14px 6px 0;color:#8a93a3;font-size:13px">' + k + '</td><td style="padding:6px 0;font-size:14px;font-weight:600;color:#16191f">' + v + '</td></tr>'; };
+  var html = '<div style="font-family:\'Malgun Gothic\',\'Apple SD Gothic Neo\',sans-serif;font-size:14px;line-height:1.7;color:#16191f">' +
+    '<p style="margin:0 0 12px">안녕하세요.<br><b>' + E(p.name) + '</b> 건 고객사 입금이 확인되었습니다.</p><table style="border-collapse:collapse">' +
+    row('프로젝트', E(p.name)) + row('고객사 (발행처)', E(inv.receiver || p.client || '')) + row('입금액', fmt(inv.total || 0) + ' <span style="color:#8a93a3;font-weight:400">(공급가액 ' + fmt(inv.amount || 0) + ' + 부가세)</span>') +
+    row('세금계산서 발행일', E(inv.issuedAt || inv.date || '')) + row('입금 확인일', E(d)) + row('확인', E(currentUser.name)) + '</table>' +
+    '<p style="margin:16px 0 0;font-size:11px;color:#a0a7b4">MARPLE WORKS에서 보낸 메일이에요</p></div>';
+  showToast('입금완료 처리 · 메일 보내는 중…');
+  sbDriveCall({ action: 'sendMail', to: to, cc: [], replyTo: currentUser.email || '', fromName: 'MARPLE WORKS · ' + currentUser.name, subject: '[입금 완료] ' + p.name + ' — ' + (inv.receiver || p.client || ''), html: html,
+    text: '안녕하세요.\n' + p.name + ' 건 고객사 입금이 확인되었습니다.\n\n- 고객사: ' + (inv.receiver || p.client || '') + '\n- 입금액: ' + fmt(inv.total || 0) + '\n- 입금 확인일: ' + d + '\n- 확인: ' + currentUser.name })
+    .then(function (j) { inv.deposit.mailed = (j && j.sent) || 0; saveDB(); showToast('입금완료 · ' + ppl.length + '명에게 알림' + (j && j.sent ? ' · 메일 ' + j.sent + '통' : '') + ' 보냈어요'); })
+    .catch(function (e) { showToast('입금완료 처리했어요 (메일은 못 보냈어요: ' + (e && e.message || e) + ')', 'error'); });
+}
+function depUndo(pid, id) {
+  if (!depCan()) return; var p = DB.projects.find(function (x) { return x.id === pid; }), inv = p && (p.taxInvoices || []).find(function (x) { return x.id === id; }); if (!inv) return;
+  var b = window.event && window.event.target; if (b && !b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '한 번 더 누르면 취소'; setTimeout(function () { if (b) { delete b.dataset.sure; b.textContent = '취소'; } }, 4000); return; }
+  delete inv.deposit; saveDB(); renderPayPlanPage(); showToast('입금완료를 취소했어요');
+}
+var _depRender = renderPayPlanPage;
+renderPayPlanPage = function () {
+  _depRender.apply(this, arguments);
+  var root = document.getElementById('payplan-root'); if (!root) return; var tabs = root.querySelector('.pp-tabs'); if (!tabs) return;
+  var n = depList().filter(function (x) { return !x.inv.deposit; }).length;
+  tabs.insertAdjacentHTML('beforeend', '<button class="' + (PPL.tab === 'dep' ? 'on' : '') + '" onclick="PPL.tab=\'dep\';renderPayPlanPage()">💰 입금 확인 <span>' + n + '</span></button>');
+  if (PPL.tab === 'dep') { [].forEach.call(tabs.querySelectorAll('button'), function (b, i) { if (i < 2) b.classList.remove('on'); }); while (tabs.nextSibling) root.removeChild(tabs.nextSibling); tabs.insertAdjacentHTML('afterend', depHTML()); }
+};
+// 프로젝트 세금계산서 목록에 입금 표시
+if (typeof renderTaxInvoiceList === 'function') { var _depList = renderTaxInvoiceList; renderTaxInvoiceList = function (p) {
+  var html = _depList.apply(this, arguments);
+  try { (p.taxInvoices || []).forEach(function (inv) { if (!inv.deposit) return; var key = 'openTaxInvoiceModal(\'' + p.id + '\',\'' + inv.id + '\')', i = html.indexOf(key); if (i < 0) return; var td = html.lastIndexOf('</td><td><div style="display:flex', i); if (td > 0) html = html.slice(0, td) + '<div class="dep-no">💰 입금완료 ' + qtEsc(String(inv.deposit.date || '').slice(5).replace('-', '/')) + '</div>' + html.slice(td); }); } catch (e) {}
+  return html;
+}; }
+
+(function () { var st = document.createElement('style'); st.id = 's84-style'; st.textContent = [
+  '#wh-types{margin:8px 0 0}',
+  '.wh-chips{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}',
+  '.wh-chips button{border:1.5px solid var(--border);background:var(--card,#fff);border-radius:10px;padding:8px 10px;text-align:left;cursor:pointer;font-family:inherit}',
+  '.wh-chips button b{display:block;font-size:13px;color:var(--text1,#16191f)}.wh-chips button small{display:block;font-size:11px;color:var(--text3);margin-top:2px;line-height:1.35;word-break:keep-all}',
+  '.wh-chips button.on{border-color:var(--marple,#009BDF);background:var(--marple-light,#e3f4fc)}.wh-chips button.on b{color:var(--marple,#009BDF)}',
+  '.wh-hint{font-size:11.5px;color:var(--text3);margin-top:6px}',
+  '.wh-f{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 0;font-size:12px}',
+  '.wh-f>span{font-weight:700;color:var(--text2);margin-right:2px}',
+  '.wh-f button{border:1px solid var(--border);background:#fff;border-radius:999px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit}',
+  '.wh-f button.on{background:var(--marple,#009BDF);border-color:var(--marple,#009BDF);color:#fff;font-weight:700}',
+  '.wh-f label{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text2)}.wh-f label input{width:64px;padding:4px 6px}',
+  '.wh-f .inc-calc{flex-basis:100%}',
+  '.wh-sel{font-size:11px;padding:1px 2px;border-radius:6px;margin-left:4px;vertical-align:1px}',
+  '.tix-cc{display:grid;grid-template-columns:1fr 1fr;gap:8px}.tix-cc label{display:flex;flex-direction:column;gap:4px}.tix-cc span{font-size:12px;color:var(--text3);font-weight:600}',
+  '.dep-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}',
+  '.dep-sum>div{background:var(--card,#fff);border:1px solid var(--border);border-radius:12px;padding:12px 16px}',
+  '.dep-sum small{display:block;font-size:12px;color:var(--text3)}.dep-sum b{font-size:20px;font-weight:800;margin-right:8px}.dep-sum span{font-size:13px;color:var(--text2)}',
+  '.dep-sum .red b,.dep-sum .red span{color:var(--red)}',
+  '.dep-act{display:flex;gap:6px;align-items:center}.dep-act input{width:132px;padding:4px 8px;font-size:12px}',
+  '.dep-ok{color:#0a8f4f;font-weight:700;white-space:nowrap}',
+  '.dep-no{font-size:10.5px;color:#0a8f4f;font-weight:700;margin-top:3px;white-space:nowrap}'
+].join('\n'); document.head.appendChild(st); })();
+
+// ── 7) 업체 서류 요청: 개인(원천징수 · 세금 없음)이면 신분증 사본도 기본 선택 ──
+var _whSetTax2 = setTaxMode;
+setTaxMode = function (mode) {
+  var r = _whSetTax2.apply(this, arguments);
+  try { if (typeof VD !== 'undefined' && VD.sel) { var per = mode !== 'vat'; VD.sel.idc = per; if (per) VD.sel.biz = false; vdRender(); } } catch (e) {}
+  return r;
+};
+var _whVdRender = vdRender;
+vdRender = function () {
+  try { if (typeof VD !== 'undefined' && !VD.sel && typeof _taxMode !== 'undefined' && _taxMode !== 'vat') { var r0 = _whVdRender.apply(this, arguments); if (VD.sel) { VD.sel.idc = true; VD.sel.biz = false; return _whVdRender.apply(this, arguments); } return r0; } } catch (e) {}
+  return _whVdRender.apply(this, arguments);
+};
+
+</script>
+<script>
+// ════ 85차 — 클라이언트 사업자등록증: 파일 드롭 · 클릭 업로드 → 구글 드라이브(클라이언트/기본 서류) ════
+var CLB = { file: null };
+function clbHTML(r) {
+  var d = r && r.bizDoc;
+  return '<div class="form-group"><label class="form-label">사업자등록증 <small style="font-weight:400;color:var(--text3)">PDF · 이미지 · 15MB까지</small></label>' +
+    '<input type="file" id="clb-in" accept=".pdf,image/*" style="display:none" onchange="clbPick(this.files);this.value=\'\'">' +
+    '<div class="clb-drop" id="clb-drop" onclick="if(!event.target.closest(\'a,button\'))document.getElementById(\'clb-in\').click()" ondragenter="clbDrag(event,1)" ondragover="clbDrag(event,1)" ondragleave="clbDrag(event,0)" ondrop="clbDrop(event)">' + clbInner(d) + '</div></div>';
+}
+function clbInner(d) {
+  var f = CLB.file;
+  if (f) return '<span class="ic">📄</span><div class="tx"><b>' + qtEsc(f.name) + '</b><small>' + Math.max(1, Math.round(f.size / 1024)) + 'KB · 저장하면 드라이브에 올라가요' + (CLB.ocr ? ' · ' + qtEsc(CLB.ocr) : '') + '</small></div><button type="button" class="btn btn-secondary btn-xs" onclick="CLB.file=null;CLB.ocr=\'\';clbRedraw()">빼기</button>';
+  if (d) return '<span class="ic">✅</span><div class="tx"><b>' + qtEsc(d.name || '사업자등록증') + '</b><small>' + qtEsc([d.by, d.at ? String(d.at).slice(0, 10) : ''].filter(Boolean).join(' · ')) + ' · 새 파일을 끌어다 놓으면 바꿔요</small></div><button type="button" class="btn btn-secondary btn-xs" onclick="clbView(CLB.name)">보기</button>';
+  return '<span class="ic up">⬆</span><div class="tx"><b>사업자등록증을 여기로 끌어다 놓거나 클릭해서 올리기</b><small>올리면 사업자번호 · 주소를 읽어서 빈칸을 채워 드려요</small></div>';
+}
+function clbRedraw() { var z = document.getElementById('clb-drop'); if (z) z.innerHTML = clbInner(CLB.name ? (clRec(CLB.name) || {}).bizDoc : null); }
+function clbDrag(e, on) { e.preventDefault(); e.stopPropagation(); var z = document.getElementById('clb-drop'); if (!z) return; if (on) z.classList.add('over'); else if (!z.contains(e.relatedTarget)) z.classList.remove('over'); }
+function clbDrop(e) { e.preventDefault(); e.stopPropagation(); var z = document.getElementById('clb-drop'); if (z) z.classList.remove('over'); if (e.dataTransfer && e.dataTransfer.files) clbPick(e.dataTransfer.files); }
+function clbPick(list) {
+  var f = list && list[0]; if (!f) return;
+  if (!/pdf|image/i.test(f.type) && !/\.(pdf|png|jpe?g|heic|webp)$/i.test(f.name)) { showToast('PDF나 이미지 파일만 올릴 수 있어요', 'error'); return; }
+  if (f.size > 15 * 1024 * 1024) { showToast('15MB 이하 파일만 올릴 수 있어요', 'error'); return; }
+  var fr = new FileReader();
+  fr.onload = function () { CLB.file = { name: f.name, type: f.type || (/\.pdf$/i.test(f.name) ? 'application/pdf' : 'image/jpeg'), size: f.size, dataUrl: fr.result }; CLB.ocr = ''; clbRedraw(); clbOcr(); };
+  fr.readAsDataURL(f);
+}
+// 사업자등록증 글자 읽어서 빈칸 채우기 (드라이브 연결돼 있을 때)
+function clbOcr() {
+  var f = CLB.file; if (!f || !sbDrive()) return;
+  CLB.ocr = '글자 읽는 중…'; clbRedraw();
+  sbDriveCall({ action: 'ocr', base64: f.dataUrl.split(',')[1], mimeType: f.type }).then(function (j) {
+    var t = String((j && j.text) || ''), got = [];
+    var set = function (ids, v, lab) { if (!v) return; ids.some(function (id) { var e = document.getElementById(id); if (e && !e.value.trim()) { e.value = v; got.push(lab); return true; } return !!e; }); };
+    var bn = (t.match(/(\d{3})\s*-\s*(\d{2})\s*-\s*(\d{5})/) || []);
+    if (bn[0]) set(['ca-biz', 'cl-biz'], bn[1] + '-' + bn[2] + '-' + bn[3], '사업자번호');
+    var ad = (t.match(/사업장\s*소재지\s*[:：]?\s*([^\n]{6,80})/) || [])[1]; if (ad) set(['ca-addr', 'cl-addr'], ad.trim(), '주소');
+    var nm = (t.match(/(?:법인명|상\s*호)\s*(?:\(단체명\))?\s*[:：]?\s*([^\n:：]{2,40})/) || [])[1]; if (nm) set(['ca-name'], nm.replace(/\s*대\s*표\s*자.*$/, '').replace(/\(주\)|㈜|주식회사/g, '').trim(), '회사명');
+    var ind = (t.match(/종\s*목\s*[:：]?\s*([^\n]{2,30})/) || [])[1]; if (ind) set(['ca-ind', 'cl-ind'], ind.trim(), '업종');
+    CLB.ocr = got.length ? got.join(' · ') + ' 채웠어요' : ''; clbRedraw();
+  }).catch(function () { CLB.ocr = ''; clbRedraw(); });
+}
+function clbView(name) { var d = (clRec(name) || {}).bizDoc; if (!d) return; if (d.driveUrl) { window.open(d.driveUrl, '_blank'); return; } if (d.dataUrl) { var w = window.open(); if (w) w.document.write('<iframe src="' + d.dataUrl + '" style="border:0;width:100%;height:100vh"></iframe>'); } }
+// 저장: 드라이브 '클라이언트 / 기본 서류' 폴더로
+function clbSave(name) {
+  var f = CLB.file; CLB.file = null; CLB.ocr = ''; if (!f || !name) return;
+  var c = clEnsure(name), now = new Date().toISOString();
+  c.bizDoc = { name: f.name, type: f.type, size: f.size, at: now, by: currentUser ? currentUser.name : '' };
+  if (!sbDrive()) {
+    if (f.size > 3 * 1024 * 1024) { showToast('드라이브 연결 전에는 3MB 이하만 보관돼요 — 설정에서 드라이브를 연결해 주세요', 'error'); delete c.bizDoc; saveDB(); return; }
+    c.bizDoc.dataUrl = f.dataUrl; saveDB(); return;
+  }
+  showToast('사업자등록증을 드라이브에 올리는 중…');
+  sbDriveCall({ action: 'uploadFile', base64: f.dataUrl.split(',')[1], mimeType: f.type, fileName: '사업자등록증_' + name + (/\.\w+$/.exec(f.name) || ['.pdf'])[0], clientName: name, projectName: '기본 서류', sub: '' })
+    .then(function (j) { var d = (clRec(name) || {}).bizDoc; if (d) { d.fileRef = 'gd:' + j.fileId; d.driveUrl = j.fileUrl; } saveDB(); try { renderClientsPage(); } catch (e) {} showToast('사업자등록증을 저장했어요 (드라이브 · ' + name + ' / 기본 서류)'); })
+    .catch(function (e) { var d = (clRec(name) || {}).bizDoc; if (d && f.size <= 3 * 1024 * 1024) { d.dataUrl = f.dataUrl; saveDB(); } showToast('드라이브 업로드 실패: ' + (e && e.message || e), 'error'); });
+}
+// 클라이언트 추가 · 정보 수정 창에 넣기
+var _clbAdd = clAddOpen;
+clAddOpen = function () {
+  CLB.file = null; CLB.ocr = ''; CLB.name = '';
+  var r = _clbAdd.apply(this, arguments);
+  var a = document.getElementById('ca-addr'); if (a) a.closest('.form-group').insertAdjacentHTML('afterend', clbHTML(null));
+  return r;
+};
+var _clbAddSave = clAddSave;
+clAddSave = function () {
+  var nm = ((document.getElementById('ca-name') || {}).value || '').trim(), had = clAll().some(function (c) { return clSame(c.name, nm); });
+  var r = _clbAddSave.apply(this, arguments);
+  if (nm && !had && clRec(nm)) clbSave(nm); else CLB.file = null;
+  return r;
+};
+var _clbEdit = clEdit;
+clEdit = function (name) {
+  CLB.file = null; CLB.ocr = ''; CLB.name = name;
+  var r = _clbEdit.apply(this, arguments);
+  var a = document.getElementById('cl-addr'); if (a) a.closest('.form-group').insertAdjacentHTML('afterend', clbHTML(clRec(name)));
+  return r;
+};
+var _clbEditSave = clEditSave;
+clEditSave = function (name) { var f = CLB.file; var r = _clbEditSave.apply(this, arguments); if (f) { CLB.file = f; clbSave(name); } return r; };
+// 클라이언트 상세: 사업자등록증 바로 보기
+var _clbDetail = clDetailHTML;
+clDetailHTML = function (c) {
+  var h = _clbDetail.apply(this, arguments), d = (c.rec || {}).bizDoc;
+  var chip = d ? '<button class="btn btn-secondary btn-sm" onclick="clbView(this.dataset.n)" data-n="' + qtEsc(c.name) + '">📄 사업자등록증</button>' : '<button class="btn btn-secondary btn-sm" style="color:var(--text3)" onclick="clEdit(this.dataset.n)" data-n="' + qtEsc(c.name) + '">📄 사업자등록증 올리기</button>';
+  return h.replace('<button class="btn btn-secondary btn-sm" onclick="clEdit(', chip + '<button class="btn btn-secondary btn-sm" onclick="clEdit(');
+};
+window.addEventListener('dragover', function (e) { if (document.getElementById('clb-drop')) e.preventDefault(); });
+window.addEventListener('drop', function (e) { if (document.getElementById('clb-drop') && !(e.target.closest && e.target.closest('#clb-drop'))) e.preventDefault(); });
+(function () { var st = document.createElement('style'); st.id = 's85-style'; st.textContent = [
+  '.clb-drop{display:flex;align-items:center;gap:12px;border:2px dashed #c9d3e0;border-radius:12px;background:#f8fafc;padding:12px 14px;cursor:pointer;transition:all .15s}',
+  '.clb-drop:hover{border-color:#009BDF;background:#f2fafe}.clb-drop.over{border-color:#009BDF;background:#e3f4fc;box-shadow:inset 0 0 0 3px rgba(0,155,223,.12)}',
+  '.clb-drop .ic{width:36px;height:36px;border-radius:50%;background:#eef1f5;display:flex;align-items:center;justify-content:center;font-size:17px;flex:none}.clb-drop .ic.up{background:#e3f4fc;color:#009BDF;font-weight:800}',
+  '.clb-drop .tx{flex:1;min-width:0}.clb-drop b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.clb-drop small{display:block;font-size:11.5px;color:var(--text3)}'
+].join('\n'); document.head.appendChild(st); })();
 
 </script>
 </body>
